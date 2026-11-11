@@ -30,6 +30,13 @@ pub struct Settings {
     /// shown while the server cannot be reached
     pub account: Option<Account>,
     pub max_photo_mb: u64,
+    /// native notifications for new notes, reports and finished face analysis
+    #[serde(default = "yes")]
+    pub notifications: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn dir(app: &AppHandle) -> PathBuf {

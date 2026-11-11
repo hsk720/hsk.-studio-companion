@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 const ID: &str = "main";
-const NAME: &str = "hsk. Studio Companion";
+const NAME: &str = "hsk. studio";
 
 pub fn show(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {

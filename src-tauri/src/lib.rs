@@ -1,28 +1,34 @@
-//! hsk. Studio Companion: the photos exported into a folder go straight into an hsk. photos album.
+//! hsk. studio: the photographer's panel on the desktop, with the folder that fills the album by itself.
 
 mod api;
 mod auth;
 mod config;
 mod keyring;
+mod notify;
 mod processor;
+mod retouch;
 mod tray;
 mod uploader;
 mod watcher;
 
 use config::{Ledger, Mode, Settings};
 use serde::Serialize;
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WindowEvent};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
+use uploader::Task;
 
 pub struct AppState {
     pub http: reqwest::Client,
     pub settings: Mutex<Settings>,
     pub ledger: Ledger,
     pub watch: Mutex<Option<watcher::Watch>>,
+    pub retouch: Mutex<Option<retouch::Active>>,
     pub queue: uploader::Queue,
     /// the last pairing code taken from a link, so the same link is not claimed twice
     pub last_code: Mutex<Option<String>>,
@@ -45,21 +51,55 @@ fn setup_of(app: &AppHandle) -> Setup {
     Setup { folder: s.folder.clone(), album: s.album.clone(), album_name: s.album_name.clone(), mode: s.mode, watching }
 }
 
+fn send_all(app: &AppHandle, paths: Vec<PathBuf>, album: &str, mode: Mode) {
+    let intake = app.state::<AppState>().queue.intake.clone();
+    for path in paths {
+        let _ = intake.send(Task { path, album: album.to_string(), mode });
+    }
+}
+
 fn begin_watching(app: &AppHandle, include_existing: bool) -> Result<(), String> {
     let state = app.state::<AppState>();
-    let folder = state.settings.lock().unwrap().folder.clone().ok_or("Alege mai întâi folderul.")?;
-    let watch = watcher::start(&folder, state.queue.intake.clone())?;
+    let (folder, album, mode) = {
+        let s = state.settings.lock().unwrap();
+        (s.folder.clone().ok_or("Alege mai întâi folderul.")?, s.album.clone().ok_or("Alege mai întâi albumul.")?, s.mode)
+    };
+    let (tx, code) = (state.queue.intake.clone(), album.clone());
+    let watch = watcher::start(&folder, move |path| {
+        let _ = tx.send(Task { path, album: code.clone(), mode });
+    })?;
     *state.watch.lock().unwrap() = Some(watch);
     if include_existing {
-        let intake = state.queue.intake.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            for path in watcher::existing(&folder) {
-                let _ = intake.send(path);
-            }
-        });
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || send_all(&app, watcher::existing(&folder), &album, mode));
     }
     tray::status(app, "urmărește folderul");
     Ok(())
+}
+
+/// The window may only reach the album panel's API, never the billing or anything outside it.
+fn allowed(path: &str) -> bool {
+    (path.starts_with("/api/albums") || path.starts_with("/api/desktop"))
+        && !path.contains("..")
+        && !path.contains("//")
+        && !path.contains('\\')
+        && !path.contains("/billing")
+}
+
+#[tauri::command]
+async fn api_call(app: AppHandle, method: String, path: String, body: Option<Value>) -> Result<Value, String> {
+    if !allowed(&path) || !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str()) {
+        return Err("Cerere nepermisă.".into());
+    }
+    let token = keyring::load().ok_or("Aplicația nu este conectată la cont.")?;
+    match api::request(&app.state::<AppState>().http, &token, &method, &path, body).await {
+        Ok(v) => Ok(v),
+        Err(api::ApiError::Unauthorized(m)) => {
+            auth::drop_session(&app);
+            Err(m)
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -68,21 +108,37 @@ fn setup_get(app: AppHandle) -> Setup {
 }
 
 #[tauri::command]
-async fn albums_list(app: AppHandle) -> Result<serde_json::Value, String> {
-    let token = keyring::load().ok_or("Aplicația nu este conectată la cont.")?;
-    match api::albums(&app.state::<AppState>().http, &token).await {
-        Ok(albums) => Ok(albums),
-        Err(api::ApiError::Unauthorized(message)) => {
-            auth::drop_session(&app);
-            Err(message)
-        }
-        Err(e) => Err(e.to_string()),
-    }
+async fn folder_pick(app: AppHandle) -> Option<PathBuf> {
+    app.dialog().file().set_title("Folderul în care exporți pozele").blocking_pick_folder()?.into_path().ok()
 }
 
 #[tauri::command]
-async fn folder_pick(app: AppHandle) -> Option<PathBuf> {
-    app.dialog().file().set_title("Folderul în care exporți pozele").blocking_pick_folder()?.into_path().ok()
+async fn files_pick(app: AppHandle) -> Vec<PathBuf> {
+    app.dialog()
+        .file()
+        .set_title("Alege pozele")
+        .add_filter("Poze", &processor::EXTENSIONS)
+        .blocking_pick_files()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| p.into_path().ok())
+        .collect()
+}
+
+/// Photos or folders dropped on the window, or chosen with the file dialog: folders are searched for photos.
+#[tauri::command]
+fn upload_paths(app: AppHandle, album: String, paths: Vec<PathBuf>, mode: Mode) -> usize {
+    let mut photos = Vec::new();
+    for p in paths {
+        if p.is_dir() {
+            photos.extend(watcher::existing(&p));
+        } else if processor::is_photo(&p) {
+            photos.push(p);
+        }
+    }
+    let n = photos.len();
+    send_all(&app, photos, &album, mode);
+    n
 }
 
 #[tauri::command]
@@ -131,14 +187,67 @@ fn queue_get(app: AppHandle) -> uploader::Snapshot {
 fn queue_retry(app: AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
     state.queue.clear_failed();
-    let folder = state.settings.lock().unwrap().folder.clone().ok_or("Alege mai întâi folderul.")?;
-    let intake = state.queue.intake.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        for path in watcher::existing(&folder) {
-            let _ = intake.send(path);
-        }
-    });
+    let (folder, album, mode) = {
+        let s = state.settings.lock().unwrap();
+        (s.folder.clone().ok_or("Alege mai întâi folderul.")?, s.album.clone().ok_or("Alege mai întâi albumul.")?, s.mode)
+    };
+    tauri::async_runtime::spawn_blocking(move || send_all(&app, watcher::existing(&folder), &album, mode));
     Ok(())
+}
+
+#[tauri::command]
+async fn retouch_start(app: AppHandle, album: String, album_name: String, photos: Vec<retouch::Photo>) -> Result<retouch::Info, String> {
+    retouch::start(&app, album, album_name, photos).await
+}
+
+#[tauri::command]
+async fn export_originals(app: AppHandle, album: String, album_name: String, photos: Vec<retouch::Photo>) -> Result<retouch::Exported, String> {
+    retouch::export(&app, album, album_name, photos).await
+}
+
+#[tauri::command]
+fn retouch_stop(app: AppHandle) {
+    *app.state::<AppState>().retouch.lock().unwrap() = None;
+}
+
+#[tauri::command]
+fn retouch_get(app: AppHandle) -> Option<retouch::Info> {
+    let state = app.state::<AppState>();
+    let r = state.retouch.lock().unwrap();
+    r.as_ref().map(|a| retouch::Info { folder: a.folder.display().to_string(), album: a.album.clone() })
+}
+
+#[tauri::command]
+fn reveal(app: AppHandle, path: PathBuf) -> Result<(), String> {
+    app.opener().reveal_item_in_dir(path).map_err(|_| "Nu am putut deschide folderul.".to_string())
+}
+
+#[derive(Serialize)]
+struct Prefs {
+    autostart: bool,
+    notifications: bool,
+}
+
+#[tauri::command]
+fn prefs_get(app: AppHandle) -> Prefs {
+    Prefs {
+        autostart: app.autolaunch().is_enabled().unwrap_or(false),
+        notifications: app.state::<AppState>().settings.lock().unwrap().notifications,
+    }
+}
+
+#[tauri::command]
+fn prefs_set(app: AppHandle, autostart: bool, notifications: bool) -> Result<Prefs, String> {
+    let launch = app.autolaunch();
+    let done = if autostart { launch.enable() } else { launch.disable() };
+    done.map_err(|_| "Nu am putut schimba pornirea cu sistemul.".to_string())?;
+    {
+        let state = app.state::<AppState>();
+        let mut s = state.settings.lock().unwrap();
+        s.notifications = notifications;
+        s.save(&app);
+    }
+    Ok(prefs_get(app))
 }
 
 /// The window may only open pages of the site.
@@ -160,6 +269,8 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .setup(|app| {
             let handle = app.handle().clone();
             let (queue, intake) = uploader::Queue::new();
@@ -168,10 +279,12 @@ pub fn run() {
                 settings: Mutex::new(Settings::load(&handle)),
                 ledger: Ledger::load(&handle),
                 watch: Mutex::new(None),
+                retouch: Mutex::new(None),
                 queue,
                 last_code: Mutex::new(None),
             });
             uploader::spawn(&handle, intake);
+            notify::spawn(&handle);
             tray::build(&handle)?;
 
             // installers register hsk://; a dev build on Windows or Linux registers itself
@@ -187,6 +300,11 @@ pub fn run() {
                 for url in urls {
                     auth::handle_link(&handle, url.as_str());
                 }
+            }
+
+            // started by the system at login: only the tray icon, the window waits to be opened
+            if !std::env::args().any(|a| a == "--hidden") {
+                tray::show(&handle);
             }
 
             // watching continues after a restart; what was exported in the meantime is picked up
@@ -212,15 +330,24 @@ pub fn run() {
             auth::auth_start,
             auth::auth_claim,
             auth::auth_sign_out,
+            api_call,
             setup_get,
-            albums_list,
             folder_pick,
+            files_pick,
+            upload_paths,
             watch_start,
             watch_stop,
             queue_get,
             queue_retry,
+            retouch_start,
+            retouch_stop,
+            export_originals,
+            retouch_get,
+            reveal,
+            prefs_get,
+            prefs_set,
             site_open,
         ])
         .run(tauri::generate_context!())
-        .expect("hsk. Studio Companion could not start");
+        .expect("hsk. studio could not start");
 }

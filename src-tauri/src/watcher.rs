@@ -5,7 +5,6 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, FileIdMap};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio::sync::mpsc::UnboundedSender;
 
 /// An export writes a file in several steps; events closer than this count as one.
 const DEBOUNCE: Duration = Duration::from_millis(1500);
@@ -15,7 +14,7 @@ pub struct Watch {
     _debouncer: Debouncer<RecommendedWatcher, FileIdMap>,
 }
 
-pub fn start(folder: &Path, tx: UnboundedSender<PathBuf>) -> Result<Watch, String> {
+pub fn start<F: Fn(PathBuf) + Send + 'static>(folder: &Path, on_photo: F) -> Result<Watch, String> {
     if !folder.is_dir() {
         return Err("Folderul nu mai există. Alege-l din nou.".into());
     }
@@ -27,7 +26,7 @@ pub fn start(folder: &Path, tx: UnboundedSender<PathBuf>) -> Result<Watch, Strin
             }
             for path in &event.paths {
                 if is_photo(path) && path.is_file() {
-                    let _ = tx.send(path.clone());
+                    on_photo(path.clone());
                 }
             }
         }

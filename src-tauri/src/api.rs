@@ -131,6 +131,51 @@ pub async fn sign_out(http: &reqwest::Client, token: &str) -> Result<(), ApiErro
     read::<Value>(sent).await.map(|_| ())
 }
 
+/// Any call of the album panel's API, for the screens of the window. The path was checked by the caller.
+pub async fn request(
+    http: &reqwest::Client,
+    token: &str,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> Result<Value, ApiError> {
+    let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|_| ApiError::Rejected("Metodă nepermisă.".into()))?;
+    let mut req = http.request(method, format!("{}{}", base(), path)).timeout(SHORT).bearer_auth(token);
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
+    read(req.send().await).await
+}
+
+/// A photo's original, written to `dest`.
+pub async fn download(http: &reqwest::Client, token: &str, path: &str, dest: &std::path::Path) -> Result<(), ApiError> {
+    let res = http
+        .get(format!("{}{}", base(), path))
+        .timeout(UPLOAD)
+        .bearer_auth(token)
+        .send()
+        .await
+        .map_err(|_| ApiError::Temporary("Nu am putut ajunge la hsk.photos.".into()))?;
+    if !res.status().is_success() {
+        return Err(ApiError::Rejected(format!("Serverul a răspuns cu eroarea {}.", res.status().as_u16())));
+    }
+    let bytes = res.bytes().await.map_err(|_| ApiError::Temporary("Descărcarea s-a întrerupt.".into()))?;
+    tokio::fs::write(dest, &bytes).await.map_err(|_| ApiError::Rejected("Nu am putut scrie fișierul pe disc.".into()))
+}
+
+/// A new version of a photo that is already in the album (same place, same address).
+pub async fn replace(http: &reqwest::Client, token: &str, album: &str, photo: &str, body: Vec<u8>) -> Result<(), ApiError> {
+    let sent = http
+        .post(format!("{}/api/albums/{}/photos/{}/replace", base(), album, photo))
+        .timeout(UPLOAD)
+        .bearer_auth(token)
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(body)
+        .send()
+        .await;
+    read::<Value>(sent).await.map(|_| ())
+}
+
 pub async fn upload(
     http: &reqwest::Client,
     token: &str,

@@ -36,6 +36,13 @@ pub struct Snapshot {
     items: Vec<Item>,
 }
 
+/// What the watcher, a dropped folder or a retry hands to the queue.
+pub struct Task {
+    pub path: PathBuf,
+    pub album: String,
+    pub mode: Mode,
+}
+
 struct Job {
     id: u64,
     path: PathBuf,
@@ -54,12 +61,12 @@ struct Inner {
 
 pub struct Queue {
     /// where the watcher (and the scan of the folder) drops paths
-    pub intake: UnboundedSender<PathBuf>,
+    pub intake: UnboundedSender<Task>,
     inner: Mutex<Inner>,
 }
 
 impl Queue {
-    pub fn new() -> (Self, UnboundedReceiver<PathBuf>) {
+    pub fn new() -> (Self, UnboundedReceiver<Task>) {
         let (intake, rx) = unbounded_channel();
         (Queue { intake, inner: Mutex::new(Inner::default()) }, rx)
     }
@@ -140,18 +147,13 @@ fn publish(app: &AppHandle) {
 }
 
 /// Starts the two background tasks. Called once, at startup.
-pub fn spawn(app: &AppHandle, mut intake: UnboundedReceiver<PathBuf>) {
+pub fn spawn(app: &AppHandle, mut intake: UnboundedReceiver<Task>) {
     let (jobs_tx, mut jobs) = unbounded_channel::<Job>();
 
     let a = app.clone();
     tauri::async_runtime::spawn(async move {
-        while let Some(path) = intake.recv().await {
+        while let Some(Task { path, album, mode }) = intake.recv().await {
             let state = a.state::<AppState>();
-            let (album, mode) = {
-                let s = state.settings.lock().unwrap();
-                (s.album.clone(), s.mode)
-            };
-            let Some(album) = album else { continue };
             if Ledger::key(&album, &path).is_some_and(|k| state.ledger.has(&k)) {
                 continue;
             }

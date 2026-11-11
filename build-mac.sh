@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds hsk. Studio Companion on a Mac: a universal .dmg (Apple Silicon + Intel), copied to the Desktop.
+# Builds hsk. studio on a Mac: a universal .dmg (Apple Silicon + Intel), copied to the Desktop.
 # Run from the project folder:  bash build-mac.sh
 set -e
 cd "$(dirname "$0")"

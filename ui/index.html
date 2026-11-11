@@ -3,73 +3,87 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>hsk. Studio Companion</title>
+<title>hsk. studio</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header class="top">
-  <p class="brand"><b>hsk.</b> <span>Studio Companion</span></p>
-  <p class="who" id="who" hidden><span id="who-name"></span><button class="quiet" id="sign-out" type="button">Deconectează</button></p>
-</header>
+<div id="boot" class="center"><p class="muted">Se verifică conectarea…</p></div>
 
-<main id="view-loading" class="view center"><p class="muted">Se verifică conectarea…</p></main>
-
-<main id="view-welcome" class="view" hidden>
-  <h1>Exporți pozele.<br>Albumul se umple singur.</h1>
-  <p class="lead">Alegi folderul în care exporți din Lightroom sau Capture One. Fiecare poză nouă ajunge în albumul tău hsk. photos, cât tu lucrezi mai departe.</p>
-  <button class="primary" id="connect" type="button">Conectează-te cu hsk. photos</button>
-  <p class="note" id="connect-note" hidden>Am deschis hsk.photos în browser. Confirmă acolo, iar aplicația se conectează singură.</p>
-  <form class="manual" id="manual">
-    <label for="code">Browserul nu a deschis aplicația? Scrie codul afișat pe site.</label>
-    <div class="row">
-      <input id="code" name="code" inputmode="latin" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="ABCD-EFGH">
-      <button class="secondary" id="claim" type="submit">Conectează</button>
-    </div>
-  </form>
-  <p class="msg" id="welcome-msg" role="alert"></p>
+<main id="welcome" hidden>
+  <p class="brand"><b>hsk.</b> <span>studio</span></p>
+  <div class="welcome-body">
+    <h1>Albumele tale,<br>direct de pe calculator.</h1>
+    <p class="lead">Creezi albume, încarci pozele, le sortezi și le trimiți invitaților fără browser. Folderul în care exporți din Lightroom sau Capture One se golește singur în album.</p>
+    <button class="primary" id="connect" type="button">Conectează-te cu hsk. photos</button>
+    <p class="note" id="connect-note" hidden>Am deschis hsk.photos în browser. Confirmă acolo, iar aplicația se conectează singură.</p>
+    <form class="manual" id="manual">
+      <label for="code">Browserul nu a deschis aplicația? Scrie codul afișat pe site.</label>
+      <div class="row">
+        <input id="code" name="code" inputmode="latin" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="ABCD-EFGH">
+        <button class="secondary" id="claim" type="submit">Conectează</button>
+      </div>
+    </form>
+    <p class="msg" id="welcome-msg" role="alert"></p>
+  </div>
 </main>
 
-<main id="view-setup" class="view" hidden>
-  <p class="offline" id="offline" hidden>Fără legătură la hsk.photos. Pozele se trimit când revine internetul.</p>
-  <section>
-    <h2>Album</h2>
-    <div class="albums" id="albums" role="radiogroup" aria-label="Album"></div>
-    <p class="muted" id="albums-empty" hidden>Nu ai încă niciun album activ. <button class="quiet" id="new-album" type="button">Creează unul pe hsk.photos</button></p>
-  </section>
-  <section>
-    <h2>Folder</h2>
-    <div class="row">
-      <p class="path" id="folder" title="">Niciun folder ales</p>
-      <button class="secondary" id="pick" type="button">Alege</button>
+<div id="app" hidden>
+  <aside id="side">
+    <p class="brand"><b>hsk.</b> <span>studio</span></p>
+    <button class="primary small" id="new-album" type="button">Album nou</button>
+    <nav id="albums" aria-label="Albume"></nav>
+    <div class="side-foot">
+      <button class="nav-btn" data-go="watch" type="button"><span>Folder urmărit</span><i class="dot" id="watch-dot" hidden></i></button>
+      <button class="nav-btn" data-go="prefs" type="button"><span>Setările aplicației</span></button>
+      <p class="who"><span id="who-name"></span><button class="quiet" id="sign-out" type="button">Deconectează</button></p>
     </div>
-  </section>
-  <section>
-    <h2>Ce se trimite</h2>
-    <div class="seg" role="radiogroup" aria-label="Ce se trimite">
-      <label><input type="radio" name="mode" value="original" checked><span>Originalul</span></label>
-      <label><input type="radio" name="mode" value="webp"><span>WebP 2560 px</span></label>
-    </div>
-    <p class="hint" id="mode-hint"></p>
-    <label class="check"><input type="checkbox" id="existing" checked><span>Trimite și pozele care sunt deja în folder</span></label>
-  </section>
-  <p class="msg" id="setup-msg" role="alert"></p>
-  <button class="primary" id="start" type="button" disabled>Pornește</button>
-</main>
+  </aside>
 
-<main id="view-live" class="view" hidden>
-  <p class="state"><span class="dot" id="dot"></span><span id="state-text">Urmăresc folderul</span></p>
-  <p class="route"><span id="live-folder"></span><span class="to">în albumul</span><button class="quiet strong" id="live-album" type="button"></button></p>
-  <dl class="counts">
-    <div><dt>Trimise</dt><dd id="n-sent">0</dd></div>
-    <div><dt>În așteptare</dt><dd id="n-waiting">0</dd></div>
-    <div><dt>Nereușite</dt><dd id="n-failed">0</dd></div>
-  </dl>
-  <p class="retry" id="retry-row" hidden><button class="quiet" id="retry" type="button">Încearcă din nou pozele nereușite</button></p>
-  <ul class="queue" id="queue" aria-live="polite"></ul>
-  <p class="muted" id="queue-empty">Exportă o poză în folder și apare aici în câteva secunde.</p>
-  <button class="secondary wide" id="stop" type="button">Oprește</button>
-</main>
+  <main id="main">
+    <p class="offline" id="offline" hidden>Fără legătură la hsk.photos. Ce ai deschis rămâne vizibil, dar modificările așteaptă internetul.</p>
+    <section class="pane center" id="v-empty">
+      <p class="muted" id="empty-text">Alege un album din stânga sau creează unul nou.</p>
+    </section>
+    <section class="pane" id="v-album" hidden>
+      <header id="al-head"></header>
+      <div class="tabs" id="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="photos">Poze</button>
+        <button type="button" role="tab" data-tab="people">Persoane</button>
+        <button type="button" role="tab" data-tab="share">Distribuire</button>
+        <button type="button" role="tab" data-tab="settings">Setări</button>
+      </div>
+      <div id="tab-body"></div>
+    </section>
+    <section class="pane" id="v-watch" hidden></section>
+    <section class="pane" id="v-prefs" hidden></section>
+  </main>
 
-<script src="app.js"></script>
+  <aside id="dock" hidden></aside>
+</div>
+
+<div id="drop" hidden><p>Lasă aici pozele sau folderul</p><span id="drop-to"></span></div>
+
+<div id="viewer" hidden>
+  <header>
+    <p id="vw-title"></p>
+    <div class="vw-actions" id="vw-actions"></div>
+  </header>
+  <button class="vw-nav prev" id="vw-prev" type="button" aria-label="Poza anterioară">‹</button>
+  <figure><img id="vw-img" alt=""></figure>
+  <button class="vw-nav next" id="vw-next" type="button" aria-label="Poza următoare">›</button>
+  <footer id="vw-info"></footer>
+</div>
+
+<dialog id="dlg"></dialog>
+<div id="toasts" aria-live="polite"></div>
+
+<script src="core.js"></script>
+<script src="shell.js"></script>
+<script src="photos.js"></script>
+<script src="people.js"></script>
+<script src="share.js"></script>
+<script src="settings.js"></script>
+<script src="watch.js"></script>
+<script src="boot.js"></script>
 </body>
 </html>

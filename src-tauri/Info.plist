@@ -3,14 +3,14 @@
 <plist version="1.0">
 <dict>
   <key>NSDesktopFolderUsageDescription</key>
-  <string>hsk. Studio Companion urmărește folderul ales de tine și trimite pozele noi în album.</string>
+  <string>hsk. studio urmărește folderul ales de tine și trimite pozele noi în album.</string>
   <key>NSDocumentsFolderUsageDescription</key>
-  <string>hsk. Studio Companion urmărește folderul ales de tine și trimite pozele noi în album.</string>
+  <string>hsk. studio urmărește folderul ales de tine și trimite pozele noi în album.</string>
   <key>NSDownloadsFolderUsageDescription</key>
-  <string>hsk. Studio Companion urmărește folderul ales de tine și trimite pozele noi în album.</string>
+  <string>hsk. studio urmărește folderul ales de tine și trimite pozele noi în album.</string>
   <key>NSRemovableVolumesUsageDescription</key>
-  <string>hsk. Studio Companion urmărește folderul ales de tine, și de pe un disc extern sau card.</string>
+  <string>hsk. studio urmărește folderul ales de tine, și de pe un disc extern sau card.</string>
   <key>NSNetworkVolumesUsageDescription</key>
-  <string>hsk. Studio Companion urmărește folderul ales de tine, și de pe un disc de rețea.</string>
+  <string>hsk. studio urmărește folderul ales de tine, și de pe un disc de rețea.</string>
 </dict>
 </plist>

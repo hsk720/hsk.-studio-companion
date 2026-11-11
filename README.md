@@ -1,4 +1,4 @@
-# hsk. Studio Companion
+# hsk. studio
 
 Aplicația de calculator a hsk. photos (macOS și Windows). Fotograful alege un album și folderul în care exportă
 din Lightroom sau Capture One; fiecare poză nouă din folder ajunge singură în album. Aplicația stă în bara de

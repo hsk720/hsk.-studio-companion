@@ -1,6 +1,6 @@
 [package]
 name = "hsk-studio-companion"
-version = "0.1.0"
+version = "0.1.1"
 description = "hsk. Studio Companion: trimite pozele din folderul de lucru direct în albumul hsk. photos"
 edition = "2021"
 rust-version = "1.77"

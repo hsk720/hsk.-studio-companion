@@ -15,9 +15,11 @@ struct Seen {
     notes: usize,
     open_reports: usize,
     pending: u64,
+    /// photos in all of the clients' favourite lists
+    picked: usize,
 }
 
-fn tell(app: &AppHandle, title: &str, body: &str) {
+pub fn tell(app: &AppHandle, title: &str, body: &str) {
     let _ = app.notification().builder().title(title).body(body).show();
 }
 
@@ -28,7 +30,11 @@ pub fn spawn(app: &AppHandle) {
         loop {
             tokio::time::sleep(EVERY).await;
             let state = app.state::<AppState>();
-            if !state.settings.lock().unwrap().notifications {
+            let (on, notes, reports, analysis, picks) = {
+                let s = state.settings.lock().unwrap();
+                (s.notifications, s.notify_notes, s.notify_reports, s.notify_analysis, s.notify_favorites)
+            };
+            if !on {
                 continue;
             }
             let Some(token) = keyring::load() else { continue };
@@ -44,16 +50,20 @@ pub fn spawn(app: &AppHandle) {
                     notes: m["notes"].as_array().map_or(0, |n| n.len()),
                     open_reports: m["reports"].as_array().map_or(0, |r| r.iter().filter(|x| x["status"] == "open").count()),
                     pending: m["pending_analysis"].as_u64().unwrap_or(0),
+                    picked: m["favorites"].as_array().map_or(0, |l| l.iter().map(|x| x["photos"].as_array().map_or(0, |p| p.len())).sum()),
                 };
                 // the first look only records: opening the app does not announce the past
                 if let Some(before) = last.get(code) {
-                    if now.notes > before.notes {
+                    if notes && now.notes > before.notes {
                         tell(&app, name, "O notiță nouă de la un invitat.");
                     }
-                    if now.open_reports > before.open_reports {
+                    if reports && now.open_reports > before.open_reports {
                         tell(&app, name, "O sesizare nouă la o poză din album.");
                     }
-                    if before.pending > 0 && now.pending == 0 {
+                    if picks && now.picked > before.picked {
+                        tell(&app, name, &format!("Clienții și-au ales pozele: {} la favorite.", now.picked));
+                    }
+                    if analysis && before.pending > 0 && now.pending == 0 {
                         tell(&app, name, "Analiza fețelor s-a terminat.");
                     }
                 }

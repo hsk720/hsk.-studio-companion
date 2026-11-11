@@ -113,3 +113,21 @@ cont Apple Developer (99 USD/an) pentru semnare și notarizare; certificat de se
 - album nou direct din aplicație
 - Lightroom: plugin „Publish Service”; Capture One: rețetă de export către folderul urmărit
 - WebP acum, originalul mai târziu (înlocuire pe server)
+
+## 2026-11-11 — new UI (preview only, not compiled yet)
+- Fixed sidebar, equal-width workspace tabs, attention panel, cover dialog, "Folder smart" page (watched export folder + suggestions for new event folders), categorised app settings. Everything saves by itself; text after the typing stops.
+- Notifications and the upload dock share the bottom-right corner (`#corner`). One upload button ("Încarcă poze") explains its options in a dialog; the send mode (originals / web copy) is set only in app settings.
+- Rust written but **not compiled**: `inbox.rs`, flat `prefs_get/prefs_set`, `inbox_pending/resolve`, pause, WebP size/quality, per-type notifications, close-to-tray. Run `cargo check` and the tests in Docker before the next tag.
+- Still to build: interactive tutorial (asked for at the end).
+- 2026-11-11: "Cont" page (`ui/account.js`): profile (name, email, phone, picture), password, plan, sign-out (moved from the sidebar; the sidebar footer is now the avatar + name). Initials come from `initialsOf()` in `core.js` (rules, no model: camel case, titles, company forms and cities ignored; person = first + last name, business = first two words).
+- 2026-11-11 (feature batch, UI checked in the preview, Rust **not compiled**):
+  - Intro: large "hsk. studio" until everything is loaded (at least 1.7 s), once per start of the app and only when the window is first in front (`ui/boot.js`; `?nosplash` skips it in the preview). With the computer's login the app starts in the tray, and the watched folder resumes after 30 s.
+  - Search button with magnifier, "Caută" and the shortcut as the keyboard shows it (⌘ on Mac, Ctrl on Windows).
+  - Distribuire: "Selecția clienților" (copy the file names for Lightroom's filter; `.xmp` sidecars with 5 stars + green label next to RAW files: `xmp.rs`), "Mesaj pentru client" (template with {album} {link} {pin}), "Proiecție în sală" (`live.js`, full screen, new photos first, QR). Cartonașele pentru mese: the site's event kit, already linked.
+  - Settings: speed limit all day or between two times (`uploader::limit_now`), watermark on web copies (`processor::stamp`), notification for new favourite lists.
+  - Queue: SHA-256 made here is compared with the one the server returns (`sha256` added to the upload response) → "verificată cu serverul".
+  - Catalog page (`catalog.js`, `catalog.rs`): index of names, dates, camera and lens per disk or folder, searchable while disks are unplugged; list stored as JSON in the config folder.
+  - New crates: sha2, chrono, kamadak-exif. Run `cargo check` and `cargo test` in Docker before tagging.
+- 2026-11-11: Distribuire has "Cartonașe, afiș și abțibilduri" (PDF from the server, page shown in the window, `save_file` saves to Downloads and opens it). Cont has the plan: what it includes, usage, renewal, other plans with "Cere acest plan" (no online payment yet). New Rust: `save_file` (base64 crate).
+- 2026-11-11: plan change popup (Upgrade/Downgrade switch, Lunar / 3 luni / Anual, paid-until date, applied at once) in Cont; locked mode for plans below Activ (only the Cont page). "Retușează" → "Editează"; Setări › "Editorul tău": system default, Lightroom Classic, Capture One, Photoshop or any program (`editors.rs`: detection in the usual folders, else a file picker); `retouch_start` opens the exported originals in it, so one app replaces the separate hsk. editor. Rust uncompiled.
+- 2026-11-11: `cargo check` and `cargo test --lib` (Docker rust:1-bookworm, Linux) pass: 14 tests, no warnings. One fix: the expected date in `inbox::days_are_formatted` was wrong (the code was right). Not yet built for macOS/Windows, not committed or tagged.

@@ -43,6 +43,15 @@ pub struct Account {
     pub plan: String,
     #[serde(default)]
     pub owner: bool,
+    #[serde(default)]
+    pub avatar: Option<String>,
+    /// the plan includes the app (Activ and up); false: only the account page works
+    #[serde(default = "yes")]
+    pub app_access: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
@@ -66,6 +75,9 @@ fn default_max_mb() -> u64 {
 pub struct Uploaded {
     #[serde(default)]
     pub duplicate: bool,
+    /// the server's SHA-256 of what it received: compared with the one made here
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 pub fn client() -> reqwest::Client {

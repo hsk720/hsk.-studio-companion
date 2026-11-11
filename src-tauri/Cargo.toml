@@ -1,6 +1,6 @@
 [package]
 name = "hsk-studio-companion"
-version = "0.2.0"
+version = "0.3.0"
 description = "hsk. studio: trimite pozele din folderul de lucru direct în albumul hsk. photos"
 edition = "2021"
 rust-version = "1.77"
@@ -30,6 +30,10 @@ notify-debouncer-full = "0.3"
 image = { version = "0.25.5", default-features = false, features = ["jpeg", "png", "tiff"] }
 webp = { version = "0.3", default-features = false }
 hostname = "0.4"
+sha2 = "0.10"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+kamadak-exif = "0.5"
 
 # the token lives in the system keychain: Keychain on macOS, Credential Manager on Windows
 [target.'cfg(target_os = "macos")'.dependencies]

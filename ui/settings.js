@@ -1,92 +1,93 @@
 'use strict';
-// An album's settings, and the app's own.
+// An album's settings, in groups: look, who finds the photos, what guests can do, the album itself.
+
+const SUB_ICONS = [['', 'Fără'], ['pin', 'Loc'], ['school', 'Școală'], ['graduation', 'Absolvire'], ['church', 'Biserică'], ['rings', 'Nuntă'], ['party', 'Petrecere'], ['building', 'Firmă'], ['camera', 'Foto'], ['heart', 'Inimă']];
+
+/** Text is saved once the typing stops; switches and choices are saved at once. */
+function later(fn, ms = 900) { let t; const run = () => { clearTimeout(t); fn(); }; const wrapped = () => { clearTimeout(t); t = setTimeout(fn, ms); }; wrapped.now = run; return wrapped; }
 
 function renderSettings() {
   const a = S.album, body = $('#tab-body');
-  const name = el('input', { class: 'field', value: a.name, maxLength: 80 });
-  const sub = el('input', { class: 'field', value: a.subtitle || '', maxLength: 90, placeholder: 'Școala, locul sau sala' });
-  const mode = el('select', { class: 'field' },
-    el('option', { value: 'all', selected: a.access_mode === 'all' }, 'Tot albumul, fără recunoaștere facială'),
-    el('option', { value: 'both', selected: a.access_mode !== 'all' }, 'Cu selfie și listă de fețe'));
-  const minors = el('input', { type: 'checkbox', checked: a.minors });
-  const recog = el('input', { type: 'checkbox', checked: !!(a.declaration && a.declaration.recognition) });
-  const parents = el('input', { type: 'checkbox', checked: !!(a.declaration && a.declaration.parents) });
-  const faceOpts = el('div', { class: 'stack', hidden: a.access_mode === 'all' },
-    el('label', { class: 'check' }, recog, el('span', {}, 'Am acordul explicit al persoanelor din poze pentru recunoașterea facială.')),
-    el('label', { class: 'check' }, minors, el('span', {}, 'În album sunt și minori.')),
-    el('label', { class: 'check', hidden: !a.minors }, parents, el('span', {}, 'Am acordul scris al părinților.')));
-  mode.addEventListener('change', () => { faceOpts.hidden = mode.value === 'all'; });
-  minors.addEventListener('change', () => { parents.closest('label').hidden = !minors.checked; });
+  if (!a || !body) return;
+  const f = { name: a.name, sub: a.subtitle || '', icon: a.subtitle_icon || '', mode: a.access_mode === 'all' ? 'all' : 'both',
+    recog: !!(a.declaration && a.declaration.recognition), minors: !!a.minors, parents: !!(a.declaration && a.declaration.parents) };
+  const saveTitle = later(async () => {
+    if (!f.name.trim()) return;
+    if (await guard(() => api('PUT', `/api/albums/${S.code}/title`, { name: f.name.trim(), subtitle: f.sub.trim(), subtitle_icon: f.icon }))) {
+      Object.assign(a, { name: f.name.trim(), subtitle: f.sub.trim(), subtitle_icon: f.icon });
+      drawAlbumHead(); loadAlbums();
+    }
+  });
+  const saveAccess = async () => {
+    const r = await guard(() => api('PUT', `/api/albums/${S.code}/settings`, { access_mode: f.mode, minors: f.mode !== 'all' && f.minors,
+      declare_photos: true, declare_recognition: f.recog, declare_parents: f.parents }));
+    if (r) Object.assign(a, { access_mode: f.mode, minors: f.mode !== 'all' && f.minors });
+  };
+  const name = el('input', { class: 'field', value: f.name, maxLength: 80, oninput: () => { f.name = name.value; saveTitle(); }, onblur: () => saveTitle.now() });
+  const sub = el('input', { class: 'field', value: f.sub, maxLength: 90, placeholder: 'Școala, locul sau sala', oninput: () => { f.sub = sub.value; saveTitle(); }, onblur: () => saveTitle.now() });
+  const iconPick = el('div', { class: 'icon-pick', role: 'radiogroup', 'aria-label': 'Iconița de lângă rând' }, SUB_ICONS.map(([v, label]) => el('button', { type: 'button', role: 'radio', title: label,
+    class: `ic${f.icon === v ? ' on' : ''}`, 'aria-checked': String(f.icon === v), 'aria-label': label,
+    onclick: e => { f.icon = v; $$('.ic', iconPick).forEach(b => { b.classList.remove('on'); b.setAttribute('aria-checked', 'false'); }); e.currentTarget.classList.add('on'); e.currentTarget.setAttribute('aria-checked', 'true'); saveTitle.now(); } },
+  v ? ico(v) : el('span', {}, '–'))));
 
-  const toggle = (key, label, hint) => el('label', { class: 'check wide-row' },
-    el('input', { type: 'checkbox', checked: a.prefs[key], onchange: async e => {
-      if (await guard(() => api('PUT', `/api/albums/${S.code}/prefs`, { [key]: e.target.checked }))) a.prefs[key] = e.target.checked;
-      else e.target.checked = !e.target.checked;
-    } }), el('span', {}, el('b', {}, label), el('small', { class: 'muted' }, hint)));
-  const sort = el('select', { class: 'field slim', onchange: async e => {
-    if (await guard(() => api('PUT', `/api/albums/${S.code}/prefs`, { sort_mode: e.target.value }))) a.prefs.sort_mode = e.target.value;
-  } }, [['upload', 'Ordinea încărcării'], ['taken', 'Ora fotografierii'], ['name', 'Numele fișierului']].map(([v, l]) => el('option', { value: v, selected: a.prefs.sort_mode === v }, l)));
+  const parentsRow = toggle('Am acordul scris al părinților', null, f.parents, v => { f.parents = v; saveAccess(); });
+  parentsRow.hidden = !f.minors;
+  const faceBox = el('div', { class: 'stack wide-stack', hidden: f.mode === 'all' },
+    toggle('Am acordul explicit al persoanelor din poze', 'Recunoașterea facială îl cere.', f.recog, v => { f.recog = v; saveAccess(); }),
+    toggle('În album sunt și minori', null, f.minors, v => { f.minors = v; parentsRow.hidden = !v; saveAccess(); }), parentsRow);
+
+  const pref = (key, label, hint) => toggle(label, hint, a.prefs[key], async (on, input) => {
+    if (await guard(() => api('PUT', `/api/albums/${S.code}/prefs`, { [key]: on }))) a.prefs[key] = on; else input.checked = !on;
+  });
   const q = a.quota;
+  const coverLine = (label, id, extra) => el('div', { class: 'kv' }, el('span', { class: 'k' }, el('b', {}, label), el('small', { class: 'muted' }, extra)),
+    el('span', { class: 'v' }, id ? el('img', { class: 'mini-cover', src: abs((a.photos || []).find(p => p.id === id)?.thumb || a.cover), alt: '' }) : el('span', { class: 'muted' }, 'aceeași')));
 
   body.replaceChildren(el('div', { class: 'pad stack wide' },
-    el('section', { class: 'stack' }, el('h2', {}, 'Nume'),
-      el('label', { class: 'lbl' }, 'Numele albumului'), name, el('label', { class: 'lbl' }, 'Rândul de sub nume'), sub,
-      el('div', {}, el('button', { class: 'primary small', type: 'button', onclick: async () => {
-        if (!name.value.trim()) return toast('Albumul are nevoie de un nume.', 'error');
-        if (await guard(() => api('PUT', `/api/albums/${S.code}/title`, { name: name.value.trim(), subtitle: sub.value.trim(), subtitle_icon: a.subtitle_icon || '' }))) { toast('Salvat.', 'success'); await loadAlbums(); reloadAlbum(); }
-      } }, 'Salvează')),
-      el('p', { class: 'muted' }, 'Coperta se alege din tab-ul Poze: selectezi o poză și apeși „Pune pe copertă”.')),
-    el('section', { class: 'stack' }, el('h2', {}, 'Cum își găsesc invitații pozele'), mode, faceOpts,
-      el('div', {}, el('button', { class: 'primary small', type: 'button', onclick: async () => {
-        const r = await guard(() => api('PUT', `/api/albums/${S.code}/settings`, { access_mode: mode.value, minors: mode.value !== 'all' && minors.checked,
-          declare_photos: true, declare_recognition: recog.checked, declare_parents: parents.checked }));
-        if (r) { toast('Salvat.', 'success'); reloadAlbum(); }
-      } }, 'Salvează'))),
-    el('section', { class: 'stack' }, el('h2', {}, 'Ce pot face invitații'),
-      toggle('guest_notes', 'Notițe pe poze', 'Pot scrie ce vor retușat; le vezi în Distribuire.'),
-      toggle('face_list', 'Lista de fețe', 'Își aleg fața dintr-o listă, fără selfie.'),
-      toggle('favorites', 'Favorite', 'Își fac o listă cu pozele preferate.'),
-      el('div', { class: 'row' }, el('span', {}, 'Ordinea pozelor:'), sort)),
-    el('section', { class: 'stack' }, el('h2', {}, 'Albumul'),
-      el('p', { class: 'muted' }, [`Cod: ${a.code}`, `creat pe ${fmtDay(a.created_at)}`, `expiră pe ${fmtDay(a.expires_at)}`,
-        q && q.limit ? `spațiu: ${fmtBytes(q.used)} din ${fmtBytes(q.limit)}` : null].filter(Boolean).join(' · ')),
-      el('p', { class: 'muted' }, 'Domeniu propriu, brand, abonament și facturi se schimbă pe hsk.photos.'),
-      el('div', {}, el('button', { class: 'secondary small', type: 'button', onclick: () => siteOpen(`/fotograf/${a.code}`) }, 'Deschide panoul de pe site'))),
-    el('section', { class: 'stack danger-zone' }, el('h2', {}, 'Ștergerea albumului'),
-      el('p', { class: 'muted' }, 'Șterge albumul, pozele și datele faciale de pe server. Nu se poate anula.'),
-      el('div', {}, el('button', { class: 'danger small', type: 'button', onclick: deleteAlbum }, 'Șterge albumul')))));
+    group('Nume și copertă', 'Ce văd invitații în capul albumului. Se salvează singur.',
+      el('label', { class: 'lbl' }, 'Numele albumului'), name,
+      el('label', { class: 'lbl' }, 'Rândul de sub nume'), sub,
+      el('label', { class: 'lbl' }, 'Iconița de lângă rând'), iconPick,
+      coverLine('Copertă pe calculator', a.cover_id, 'Se alege din Poze: selectezi o poză și apeși „Copertă”.'),
+      coverLine('Copertă pe telefon', a.cover_mobile_id, 'Dacă nu are una proprie, folosește coperta de pe calculator.'),
+      el('div', {}, btn('secondary small', 'image', 'Alege coperta', () => coverPicker()))),
+    group('Cum își găsesc invitații pozele', 'Recunoașterea facială cere acordul persoanelor din poze.',
+      segmented([{ value: 'all', icon: 'image', label: 'Tot albumul', hint: 'Fără recunoaștere facială' }, { value: 'both', icon: 'scan', label: 'Cu selfie și fețe', hint: 'Recunoaștere facială' }], f.mode,
+        v => { f.mode = v; faceBox.hidden = v === 'all'; saveAccess(); }, 'Cum își găsesc invitații pozele'),
+      faceBox),
+    group('Ce pot face invitații', 'Se aplică imediat.',
+      pref('guest_notes', 'Notițe pe poze', 'Pot scrie ce vor retușat; le vezi în Distribuire.'),
+      pref('face_list', 'Lista de fețe', 'Își aleg fața dintr-o listă, fără selfie.'),
+      pref('favorites', 'Favorite', 'Își fac o listă cu pozele preferate.'),
+      el('div', { class: 'kv' }, el('span', { class: 'k' }, el('b', {}, 'Ordinea pozelor'), el('small', { class: 'muted' }, 'În albumul invitaților.')),
+        segmented([{ value: 'upload', label: 'Încărcare' }, { value: 'taken', label: 'Ora pozei' }, { value: 'name', label: 'Nume' }], a.prefs.sort_mode, async v => {
+          if (await guard(() => api('PUT', `/api/albums/${S.code}/prefs`, { sort_mode: v }))) a.prefs.sort_mode = v;
+        }, 'Ordinea pozelor'))),
+    group('Albumul', null,
+      el('p', { class: 'muted' }, [`Cod ${a.code}`, `creat pe ${fmtDay(a.created_at)}`, `expiră pe ${fmtDay(a.expires_at)}`, q && q.limit ? `spațiu: ${fmtBytes(q.used)} din ${fmtBytes(q.limit)}` : null].filter(Boolean).join(' · ')),
+      el('div', { class: 'row wrap' },
+        btn('secondary small', 'external', 'Panoul albumului, pe site', () => siteOpen(`/fotograf/${a.code}`), { title: 'Domeniu propriu, brand, abonament și facturi se schimbă acolo' }))),
+    el('section', { class: 'group danger-zone' }, el('div', { class: 'group-head' }, el('h2', {}, 'Ștergerea albumului'), el('p', { class: 'muted' }, 'Șterge albumul, pozele și datele faciale de pe server. Nu se poate anula.')),
+      el('div', { class: 'group-body' }, el('div', {}, btn('danger small', 'trash', 'Șterge albumul', deleteAlbum))))));
+}
+
+/** Pick the cover photo from the whole album, then frame it. */
+async function coverPicker() {
+  const photos = S.album.photos || [];
+  if (!photos.length) return toast('Încarcă mai întâi câteva poze.', 'error');
+  const grid = el('div', { class: 'picker' }, photos.slice(0, 300).map(p => el('button', { type: 'button', class: 'tile', title: p.filename, onclick: () => closeModal(p.id) }, el('img', { src: abs(p.thumb), alt: p.filename, loading: 'lazy' }))));
+  const id = await modal({ title: 'Alege poza pentru copertă', body: grid, wide: true, actions: [{ label: 'Renunț', value: undefined }] });
+  if (id) coverDialog(id);
 }
 
 async function deleteAlbum() {
-  const a = S.album;
+  const a = S.album, id = `album:${S.code}`;
   const typed = await promptBox(`Ștergi „${a.name}”?`, `Scrie numele albumului ca să confirmi: ${a.name}`, '', 'Șterge albumul');
   if (typed === null) return;
   if (typed !== a.name) return toast('Numele nu se potrivește. Albumul nu a fost șters.', 'error');
   if (!await guard(() => api('DELETE', `/api/albums/${S.code}`))) return;
   toast('Albumul a fost șters.', 'success');
-  S.code = S.album = null;
-  try { localStorage.removeItem('hsk.last'); } catch { /* storage blocked */ }
+  closeTab(id);
   await loadAlbums();
-  show('empty');
-}
-
-// ---- the app's own settings ----
-async function renderPrefs() {
-  const pane = $('#v-prefs');
-  const prefs = await guard(() => invoke('prefs_get'));
-  if (!prefs) return;
-  const set = async (patch) => {
-    const next = await guard(() => invoke('prefs_set', { autostart: prefs.autostart, notifications: prefs.notifications, ...patch }));
-    if (next) Object.assign(prefs, next);
-    renderPrefs();
-  };
-  pane.replaceChildren(el('div', { class: 'pad stack wide' },
-    el('h1', {}, 'Setările aplicației'),
-    el('p', { class: 'muted' }, S.account ? `${S.account.name} · plan ${S.account.plan}` : ''),
-    el('label', { class: 'check wide-row' }, el('input', { type: 'checkbox', checked: prefs.autostart, onchange: e => set({ autostart: e.target.checked }) }),
-      el('span', {}, el('b', {}, 'Pornește odată cu calculatorul'), el('small', { class: 'muted' }, 'Aplicația stă în bara de meniu sau lângă ceas și continuă să urmărească folderul, chiar cu fereastra închisă.'))),
-    el('label', { class: 'check wide-row' }, el('input', { type: 'checkbox', checked: prefs.notifications, onchange: e => set({ notifications: e.target.checked }) }),
-      el('span', {}, el('b', {}, 'Notificări'), el('small', { class: 'muted' }, 'Te anunță când vine o notiță sau o sesizare și când se termină analiza fețelor.'))),
-    el('p', { class: 'muted' }, `Dimensiunea maximă a unei poze: ${S.me ? S.me.max_photo_mb : 60} MB.`),
-    el('div', {}, el('button', { class: 'secondary small', type: 'button', onclick: () => siteOpen('/fotograf') }, 'Deschide hsk.photos'))));
+  refreshAttention();
 }

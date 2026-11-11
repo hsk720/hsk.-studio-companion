@@ -6,8 +6,8 @@ async function renderPeople() {
   if (a.access_mode === 'all') {
     return body.replaceChildren(el('div', { class: 'pad stack' },
       el('h2', {}, 'Albumul nu folosește recunoașterea facială'),
-      el('p', { class: 'muted' }, 'Invitații văd toate pozele și nicio față nu se analizează. Poți schimba asta din Setări, după ce confirmi acordul persoanelor din poze.'),
-      el('button', { class: 'secondary', type: 'button', onclick: () => { S.tab = 'settings'; renderAlbum(); } }, 'Deschide Setări')));
+      el('p', { class: 'muted' }, 'Invitații văd toate pozele și nicio față nu e căutată. Poți schimba asta din Setări, după ce confirmi acordul persoanelor din poze.'),
+      btn('secondary', 'sliders', 'Deschide Setări', () => openAlbum(S.code, 'settings'))));
   }
   body.replaceChildren(el('p', { class: 'muted pad' }, 'Se încarcă persoanele…'));
   const [org, rev] = await Promise.all([guard(() => api('GET', `/api/albums/${code}/organize`)), guard(() => api('GET', `/api/albums/${code}/review`))]);
@@ -18,11 +18,11 @@ async function renderPeople() {
     el('div', { class: 'toolbar' },
       el('span', { class: 'muted' }, [plural(org.people.length, 'persoană', 'persoane'),
         org.others ? `${plural(org.others, 'poză', 'poze')} fără o persoană clară` : null,
-        org.pending ? `${plural(org.pending, 'poză', 'poze')} în analiză` : null].filter(Boolean).join(' · ')),
+        org.pending ? `${plural(org.pending, 'poză', 'poze')} în care se caută fețe` : null].filter(Boolean).join(' · ')),
       el('span', { class: 'grow' }),
-      el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: org.organize, onchange: async e => {
-        if (!await guard(() => api('PUT', `/api/albums/${code}/organize`, { organize: e.target.checked }))) e.target.checked = !e.target.checked;
-      } }), el('span', {}, 'Albumul se arată invitaților pe persoane'))),
+      toggle('Albumul se arată invitaților pe persoane', null, org.organize, async (on, input) => {
+        if (!await guard(() => api('PUT', `/api/albums/${code}/organize`, { organize: on }))) input.checked = !on;
+      })),
     items.length ? reviewSection(items, org) : null,
     org.people.length ? el('div', { class: 'people' }, org.people.map(p => personCard(p)))
       : el('p', { class: 'empty' }, org.pending ? 'Fețele se caută în fundal. Revino în câteva minute.' : 'Nu am găsit încă nicio persoană. Încarcă poze în care se văd fețe.')].filter(Boolean));

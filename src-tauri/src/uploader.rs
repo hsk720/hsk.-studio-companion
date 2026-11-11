@@ -7,6 +7,7 @@ use crate::api::{self, ApiError};
 use crate::config::{Ledger, Mode};
 use crate::{auth, keyring, processor, tray, AppState};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -26,6 +27,8 @@ pub struct Item {
     /// waiting | preparing | uploading | sent | duplicate | failed
     state: &'static str,
     detail: String,
+    /// the server reports the same SHA-256 as the file that left this computer
+    verified: bool,
 }
 
 #[derive(Clone, Serialize, Default)]
@@ -89,7 +92,7 @@ impl Queue {
         q.next += 1;
         let id = q.next;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        q.items.push_back(Item { id, name, state: "waiting", detail: String::new() });
+        q.items.push_back(Item { id, name, state: "waiting", detail: String::new(), verified: false });
         // finished rows fall off the top; rows still in work are always kept
         while q.items.len() > SHOWN * 4 {
             match q.items.iter().position(|i| matches!(i.state, "sent" | "duplicate" | "failed")) {
@@ -116,6 +119,13 @@ impl Queue {
         if let Some(item) = q.items.iter_mut().find(|i| i.id == job.id) {
             item.state = state;
             item.detail = detail.to_string();
+        }
+    }
+
+    fn verified(&self, job: &Job) {
+        let mut q = self.inner.lock().unwrap();
+        if let Some(item) = q.items.iter_mut().find(|i| i.id == job.id) {
+            item.verified = true;
         }
     }
 
@@ -168,8 +178,17 @@ pub fn spawn(app: &AppHandle, mut intake: UnboundedReceiver<Task>) {
     tauri::async_runtime::spawn(async move {
         while let Some(job) = jobs.recv().await {
             let state = a.state::<AppState>();
+            // paused from the settings: the photo waits in the queue
+            while state.settings.lock().unwrap().paused {
+                sleep(Duration::from_secs(1)).await;
+            }
             match send(&a, &job).await {
-                Ok(Sent::New) => state.queue.set(&job, "sent", ""),
+                Ok(Sent::New(v)) => {
+                    state.queue.set(&job, "sent", "");
+                    if v {
+                        state.queue.verified(&job);
+                    }
+                }
                 Ok(Sent::Duplicate) => state.queue.set(&job, "duplicate", "era deja în album"),
                 Ok(Sent::Known) => state.queue.forget(&job),
                 Err(message) => state.queue.set(&job, "failed", &message),
@@ -180,7 +199,8 @@ pub fn spawn(app: &AppHandle, mut intake: UnboundedReceiver<Task>) {
 }
 
 enum Sent {
-    New,
+    /// uploaded; true when the server's hash matched
+    New(bool),
     Duplicate,
     /// the ledger already has this exact file
     Known,
@@ -218,7 +238,12 @@ async fn send(app: &AppHandle, job: &Job) -> Result<Sent, String> {
             state.queue.set(job, "preparing", "");
             publish(app);
             let path = job.path.clone();
-            let webp = tauri::async_runtime::spawn_blocking(move || processor::to_webp(&path))
+            let (edge, quality, mark) = {
+                let s = state.settings.lock().unwrap();
+                let mark = s.wm_path.clone().filter(|_| s.wm_enabled).map(|path| processor::Watermark { path, pos: s.wm_pos.clone(), size: s.wm_size, opacity: s.wm_opacity });
+                (s.webp_edge, s.webp_quality, mark)
+            };
+            let webp = tauri::async_runtime::spawn_blocking(move || processor::to_webp(&path, edge, quality, mark.as_ref()))
                 .await
                 .map_err(|_| "Poza nu a putut fi pregătită.".to_string())??;
             (webp, Path::new(&name).with_extension("webp").to_string_lossy().into_owned())
@@ -235,12 +260,26 @@ async fn send(app: &AppHandle, job: &Job) -> Result<Sent, String> {
 
     state.queue.set(job, "uploading", "");
     publish(app);
+    let local = format!("{:x}", Sha256::digest(&body));
+    let bytes = body.len() as u64;
     let mut attempt = 0;
     loop {
+        let began = std::time::Instant::now();
         match api::upload(&state.http, &token, &job.album, &filename, body.clone()).await {
             Ok(up) => {
+                if up.sha256.as_deref().is_some_and(|remote| !remote.eq_ignore_ascii_case(&local)) {
+                    return Err("Poza a ajuns alterată pe server. Încearc-o din nou.".into());
+                }
+                let verified = up.sha256.is_some();
                 state.ledger.add(key);
-                return Ok(if up.duplicate { Sent::Duplicate } else { Sent::New });
+                // under a speed limit the upload is stretched to the time it should have taken
+                if let Some(mbps) = limit_now(&state) {
+                    let target = Duration::from_secs_f64(bytes as f64 * 8.0 / (f64::from(mbps) * 1_000_000.0));
+                    if let Some(rest) = target.checked_sub(began.elapsed()) {
+                        sleep(rest).await;
+                    }
+                }
+                return Ok(if up.duplicate { Sent::Duplicate } else { Sent::New(verified) });
             }
             Err(ApiError::Temporary(message)) => {
                 let Some(wait) = RETRY_AFTER.get(attempt) else { return Err(message) };
@@ -256,4 +295,20 @@ async fn send(app: &AppHandle, job: &Job) -> Result<Sent, String> {
             Err(ApiError::Rejected(message)) => return Err(message),
         }
     }
+}
+
+/// The speed limit in force right now, in Mbps: all day, or only between the two times set.
+fn limit_now(state: &AppState) -> Option<u32> {
+    let s = state.settings.lock().unwrap();
+    if !s.limit_enabled {
+        return None;
+    }
+    if !s.limit_hours {
+        return Some(s.limit_mbps.max(1));
+    }
+    let parse = |t: &str| chrono::NaiveTime::parse_from_str(t, "%H:%M").ok();
+    let (from, to) = (parse(&s.limit_from)?, parse(&s.limit_to)?);
+    let now = chrono::Local::now().time();
+    let inside = if from <= to { now >= from && now < to } else { now >= from || now < to };
+    inside.then(|| s.limit_mbps.max(1))
 }

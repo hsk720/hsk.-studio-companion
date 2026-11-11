@@ -18,7 +18,7 @@ pub enum Mode {
     Webp,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub folder: Option<PathBuf>,
@@ -30,13 +30,81 @@ pub struct Settings {
     /// shown while the server cannot be reached
     pub account: Option<Account>,
     pub max_photo_mb: u64,
-    /// native notifications for new notes, reports and finished face analysis
-    #[serde(default = "yes")]
+    /// closing the window leaves the app running in the tray
+    pub close_to_tray: bool,
+    /// native notifications; the three below choose which ones
     pub notifications: bool,
+    pub notify_notes: bool,
+    pub notify_reports: bool,
+    pub notify_analysis: bool,
+    /// the WebP copy: long edge in px and quality
+    pub webp_edge: u32,
+    pub webp_quality: u8,
+    /// the queue holds its photos until this is switched off
+    pub paused: bool,
+    /// the folder that collects exports, searched for new event folders
+    pub inbox_enabled: bool,
+    pub inbox_root: Option<PathBuf>,
+    pub inbox_min: usize,
+    /// folders answered with "yes" or "never ask": not offered again
+    pub inbox_done: Vec<PathBuf>,
+    pub notify_favorites: bool,
+    /// upload speed limit, all day or only between two times (HH:MM, may cross midnight)
+    pub limit_enabled: bool,
+    pub limit_mbps: u32,
+    pub limit_hours: bool,
+    pub limit_from: String,
+    pub limit_to: String,
+    /// the studio's mark on the web copies
+    pub wm_enabled: bool,
+    pub wm_path: Option<PathBuf>,
+    /// bl | center | br
+    pub wm_pos: String,
+    /// width of the mark as a percentage of the long edge
+    pub wm_size: u32,
+    pub wm_opacity: u32,
+    /// system | lightroom | captureone | photoshop | custom: what "Editează" opens the photos in
+    pub editor: String,
+    pub editor_path: Option<PathBuf>,
 }
 
-fn yes() -> bool {
-    true
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            folder: None,
+            album: None,
+            album_name: String::new(),
+            mode: Mode::Original,
+            watching: false,
+            account: None,
+            max_photo_mb: 0,
+            close_to_tray: true,
+            notifications: true,
+            notify_notes: true,
+            notify_reports: true,
+            notify_analysis: true,
+            webp_edge: crate::processor::LONG_EDGE,
+            webp_quality: crate::processor::QUALITY as u8,
+            paused: false,
+            inbox_enabled: false,
+            inbox_root: None,
+            inbox_min: 10,
+            inbox_done: Vec::new(),
+            notify_favorites: true,
+            limit_enabled: false,
+            limit_mbps: 30,
+            limit_hours: false,
+            limit_from: "18:00".into(),
+            limit_to: "23:00".into(),
+            wm_enabled: false,
+            wm_path: None,
+            wm_pos: "br".into(),
+            wm_size: 20,
+            wm_opacity: 70,
+            editor: "system".into(),
+            editor_path: None,
+        }
+    }
 }
 
 fn dir(app: &AppHandle) -> PathBuf {

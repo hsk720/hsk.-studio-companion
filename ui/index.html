@@ -7,7 +7,11 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<div id="boot" class="center"><p class="muted">Se verifică conectarea…</p></div>
+<div id="splash" aria-hidden="true">
+  <p class="splash-mark"><b>hsk.</b><span>studio</span></p>
+  <i class="splash-bar"></i>
+</div>
+<div id="boot" class="center"></div>
 
 <main id="welcome" hidden>
   <p class="brand"><b>hsk.</b> <span>studio</span></p>
@@ -29,36 +33,28 @@
 
 <div id="app" hidden>
   <aside id="side">
-    <p class="brand"><b>hsk.</b> <span>studio</span></p>
-    <button class="primary small" id="new-album" type="button">Album nou</button>
+    <div class="side-head">
+      <p class="brand"><b>hsk.</b> <span>studio</span></p>
+    </div>
+    <button class="primary small" id="new-album" type="button" title="Album nou (Ctrl+N)"></button>
+    <nav class="nav" id="nav" aria-label="Aplicația"></nav>
+    <div class="side-label"><span>Albume</span></div>
+    <input class="field slim side-search" id="album-search" type="search" placeholder="Caută un album" aria-label="Caută un album" autocomplete="off">
     <nav id="albums" aria-label="Albume"></nav>
     <div class="side-foot">
-      <button class="nav-btn" data-go="watch" type="button"><span>Folder urmărit</span><i class="dot" id="watch-dot" hidden></i></button>
-      <button class="nav-btn" data-go="prefs" type="button"><span>Setările aplicației</span></button>
-      <p class="who"><span id="who-name"></span><button class="quiet" id="sign-out" type="button">Deconectează</button></p>
+      <button class="who-btn" id="who" type="button" title="Contul tău"></button>
     </div>
   </aside>
 
-  <main id="main">
-    <p class="offline" id="offline" hidden>Fără legătură la hsk.photos. Ce ai deschis rămâne vizibil, dar modificările așteaptă internetul.</p>
-    <section class="pane center" id="v-empty">
-      <p class="muted" id="empty-text">Alege un album din stânga sau creează unul nou.</p>
-    </section>
-    <section class="pane" id="v-album" hidden>
-      <header id="al-head"></header>
-      <div class="tabs" id="tabs" role="tablist">
-        <button type="button" role="tab" data-tab="photos">Poze</button>
-        <button type="button" role="tab" data-tab="people">Persoane</button>
-        <button type="button" role="tab" data-tab="share">Distribuire</button>
-        <button type="button" role="tab" data-tab="settings">Setări</button>
-      </div>
-      <div id="tab-body"></div>
-    </section>
-    <section class="pane" id="v-watch" hidden></section>
-    <section class="pane" id="v-prefs" hidden></section>
-  </main>
+  <section id="work">
+    <header id="topbar">
+      <div class="tabstrip" id="tabstrip" role="tablist" aria-label="Albume deschise"></div>
+      <button class="search-btn" id="palette-btn" type="button" aria-label="Caută un album sau o acțiune"></button>
+    </header>
+    <p class="offline" id="offline" hidden></p>
+    <div id="stage"></div>
+  </section>
 
-  <aside id="dock" hidden></aside>
 </div>
 
 <div id="drop" hidden><p>Lasă aici pozele sau folderul</p><span id="drop-to"></span></div>
@@ -68,22 +64,29 @@
     <p id="vw-title"></p>
     <div class="vw-actions" id="vw-actions"></div>
   </header>
-  <button class="vw-nav prev" id="vw-prev" type="button" aria-label="Poza anterioară">‹</button>
+  <button class="vw-nav prev" id="vw-prev" type="button" aria-label="Poza anterioară"></button>
   <figure><img id="vw-img" alt=""></figure>
-  <button class="vw-nav next" id="vw-next" type="button" aria-label="Poza următoare">›</button>
+  <button class="vw-nav next" id="vw-next" type="button" aria-label="Poza următoare"></button>
   <footer id="vw-info"></footer>
 </div>
 
 <dialog id="dlg"></dialog>
-<div id="toasts" aria-live="polite"></div>
+<div id="corner"><aside id="dock" hidden></aside><div id="toasts" aria-live="polite"></div></div>
 
+<script src="sprite.js"></script>
 <script src="core.js"></script>
 <script src="shell.js"></script>
+<script src="home.js"></script>
 <script src="photos.js"></script>
+<script src="cover.js"></script>
 <script src="people.js"></script>
 <script src="share.js"></script>
 <script src="settings.js"></script>
+<script src="account.js"></script>
+<script src="prefs.js"></script>
 <script src="watch.js"></script>
+<script src="live.js"></script>
+<script src="catalog.js"></script>
 <script src="boot.js"></script>
 </body>
 </html>

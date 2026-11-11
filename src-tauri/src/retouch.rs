@@ -38,6 +38,8 @@ struct FileEvent {
 pub struct Info {
     pub folder: String,
     pub album: String,
+    /// the program the photos were opened in; empty: the system's default
+    pub editor: String,
 }
 
 fn safe(name: &str) -> String {
@@ -70,16 +72,20 @@ pub async fn start(app: &AppHandle, album: String, album_name: String, photos: V
     *state.retouch.lock().unwrap() = None;
 
     let mut failed = 0;
+    let mut files = Vec::new();
     for p in &photos {
         let ext = Path::new(&p.filename).extension().and_then(|e| e.to_str()).unwrap_or("jpg").to_ascii_lowercase();
         let stem = Path::new(&p.filename).file_stem().and_then(|s| s.to_str()).unwrap_or("poza");
         let dest = folder.join(format!("{}__{}.{}", safe(stem), p.id, ext));
         if dest.exists() {
+            files.push(dest);
             continue;
         }
         if api::download(&state.http, &token, &format!("/media/{album}/{}/original", p.id), &dest).await.is_err() {
             failed += 1;
             let _ = std::fs::remove_file(&dest);
+        } else {
+            files.push(dest);
         }
     }
     if failed == photos.len() && !photos.is_empty() {
@@ -110,7 +116,14 @@ pub async fn start(app: &AppHandle, album: String, album_name: String, photos: V
         tauri::async_runtime::spawn(async move { send(&app, &album, &id, &path).await });
     })?;
     *state.retouch.lock().unwrap() = Some(Active { _watch: watch, folder: folder.clone(), album: album.clone() });
-    Ok(Info { folder: folder.display().to_string(), album })
+    // the photos open in the editor chosen in the settings; if it cannot start, the folder is still there
+    let (kind, program) = {
+        let s = state.settings.lock().unwrap();
+        (s.editor.clone(), s.editor_path.clone().filter(|_| s.editor != "system"))
+    };
+    let opened = crate::editors::launch(program.as_deref(), &files).is_ok();
+    let editor = if opened { crate::editors::label(&kind, program.as_deref()) } else { String::new() };
+    Ok(Info { folder: folder.display().to_string(), album, editor })
 }
 
 async fn send(app: &AppHandle, album: &str, id: &str, path: &Path) {

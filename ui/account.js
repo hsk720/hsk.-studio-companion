@@ -79,10 +79,9 @@ async function renderAccount() {
       el('div', { class: 'two' }, field('Email', 'email', { type: 'email', maxLength: 120, autocomplete: 'email' }), field('Telefon', 'phone', { type: 'tel', maxLength: 30, autocomplete: 'tel', placeholder: '+40 …' })),
       el('div', { class: 'kv' }, el('span', { class: 'k' }, el('b', {}, 'Inițiale pe avatar'), el('small', { class: 'muted' }, `Alese automat din nume: ${auto}. Scrie altele ca să le schimbi; lasă gol ca să revii la automat.`)), el('span', { class: 'v' }, initialsInput))),
 
-    group('Conectare', profile.has_password ? 'Te poți conecta cu emailul și parola, sau cu codul de acces.' : 'Acum te conectezi doar cu codul de acces. Cu o parolă te poți conecta și cu emailul.',
-      el('div', { class: 'kv' }, el('span', { class: 'k' }, el('b', {}, 'Parola'), el('small', { class: 'muted' }, profile.has_password ? `Setată ${fmtDay(profile.password_at)}.` : 'Nu ai setat una.')),
-        el('span', { class: 'v' }, btn('secondary small', 'key', profile.has_password ? 'Schimbă parola' : 'Setează o parolă', () => passwordDialog(profile.has_password, redraw)),
-          profile.has_password ? btn('quiet', null, 'Scoate parola', () => removePassword(redraw)) : null))),
+    group('Conectare', 'Te conectezi cu emailul și parola, pe site și în aplicație.',
+      el('div', { class: 'kv' }, el('span', { class: 'k' }, el('b', {}, 'Parola'), el('small', { class: 'muted' }, profile.has_password ? `Setată ${fmtDay(profile.password_at)}.` : 'Nu ai setat una încă.')),
+        el('span', { class: 'v' }, btn('secondary small', 'key', profile.has_password ? 'Schimbă parola' : 'Setează o parolă', () => passwordDialog(profile.has_password, redraw))))),
 
     planGroup(),
 
@@ -194,13 +193,4 @@ async function passwordDialog(has, done) {
       try { await api('PUT', '/api/desktop/password', { current: cur.value, new: a.value }); return true; } catch (e) { msg.textContent = e.message; return false; }
     } });
   if (r === 'ok') { toast('Parola a fost setată.', 'success'); done(); }
-}
-
-async function removePassword(done) {
-  const cur = el('input', { class: 'field', type: 'password', autocomplete: 'current-password', 'aria-label': 'Parola actuală' });
-  const msg = el('p', { class: 'msg', role: 'alert' });
-  const r = await modal({ title: 'Scoți parola?', body: el('div', { class: 'stack' }, el('p', {}, 'Te vei conecta din nou doar cu codul de acces.'), el('label', { class: 'lbl' }, 'Parola actuală'), cur, msg),
-    actions: [{ label: 'Renunț', value: false }, { label: 'Scoate parola', value: 'ok', primary: true, keepOpen: true }],
-    onaction: async v => { if (v !== 'ok') return true; try { await api('DELETE', '/api/desktop/password', { current: cur.value, new: '' }); return true; } catch (e) { msg.textContent = e.message; return false; } } });
-  if (r === 'ok') { toast('Parola a fost scoasă.', 'info'); done(); }
 }

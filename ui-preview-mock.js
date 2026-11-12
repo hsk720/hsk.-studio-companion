@@ -59,9 +59,10 @@
         return { ...profile };
       }
       if (method === 'POST' && path === '/api/albums') throw new Error('În previzualizare nu se pot crea albume. Aplicația instalată le creează pe contul tău.');
+      if (method === 'POST' && path === '/api/desktop/demo') return { code: 'DEMO', created: false };
       if (path === '/api/desktop/albums') {
         const m = await (await fetch('/api/albums/DEMO/manage?photos=false', { headers: DEMO })).json();
-        return { albums: [{ code: m.code, name: m.name, event_date: m.event_date, created_at: m.created_at, expires_at: m.expires_at, photos: m.photo_count, thumb: m.cover }] };
+        return { albums: [{ code: m.code, name: m.name, event_date: m.event_date, created_at: m.created_at, expires_at: Math.floor(Date.now() / 1000) + 3 * 86400 - 600, photos: m.photo_count, thumb: m.cover, demo: true }] };
       }
       const r = await fetch(path, { method, headers: DEMO, body: body == null ? undefined : JSON.stringify(body) });
       const data = await r.json().catch(() => ({}));

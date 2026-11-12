@@ -98,6 +98,20 @@ async function refreshAttention() {
 }
 
 // ---- the dashboard ----
+/** Demo album and tutorial, each with its own hide button; once both are hidden the group is gone. */
+function introGroup() {
+  const demo = !ui.get('hideDemo', false), tour = !ui.get('hideTour', false);
+  if (!demo && !tour) return null;
+  const row = (title, text, actions) => el('div', { class: 'intro-row' }, el('div', {}, el('b', {}, title), el('p', { class: 'muted' }, text)), el('div', { class: 'intro-acts' }, ...actions));
+  return group('Începe de aici', 'Ca să vezi cum merg lucrurile înainte să încarci un album adevărat.', el('div', { class: 'stack' },
+    demo ? row('Album demo', S.demo ? 'Un album de probă, doar al tău, cu poze deja încărcate. Încarci, sortezi, distribui, fără să atingi albumele tale. Dispare singur după trei zile.'
+      : 'Ți-l facem cu un clic: un album de probă, doar al tău, cu poze deja încărcate.',
+    [btn('primary small', 'image', S.demo ? 'Deschide albumul demo' : 'Creează albumul demo', openDemo), btn('quiet', null, 'Ascunde', () => hideIntro(['demo']))]) : null,
+    tour ? row('Tutorial', 'Un tur de jumătate de minut prin aplicație.',
+      [btn('secondary small', 'sparkles', 'Pornește tutorialul', () => tourStart()), btn('quiet', null, 'Ascunde', () => hideIntro(['tour']))]) : null,
+    el('p', { class: 'muted' }, el('button', { class: 'quiet', type: 'button', onclick: () => hideIntro(['demo', 'tour']) }, 'Ascunde tot'), ' · le găsești oricând în căutare.')));
+}
+
 function renderHome() {
   const stage = $('#stage');
   const stats = S.albums.map(a => S.stats[a.code]).filter(Boolean);
@@ -113,6 +127,7 @@ function renderHome() {
       stat('Poze în total', nf.format(photos)),
       stat('Căutări ale invitaților', nf.format(searches)),
       q && q.limit ? stat('Spațiu folosit', `${Math.round((q.used / q.limit) * 100)}%`, el('div', { class: 'bar' }, el('i', { style: `width:${Math.min(100, Math.round((q.used / q.limit) * 100))}%` }))) : null)),
+    introGroup(),
     S.albums.length ? null : group('Primul album', null, el('ol', { class: 'steps' },
       el('li', {}, 'Apasă „Album nou” din stânga și dă-i un nume.'),
       el('li', {}, 'Trage pozele sau un folder în fereastră. Fețele se caută singure.'),

@@ -67,7 +67,7 @@ function renderSettings() {
       el('p', { class: 'muted' }, [`Cod ${a.code}`, `creat pe ${fmtDay(a.created_at)}`, `expiră pe ${fmtDay(a.expires_at)}`, q && q.limit ? `spațiu: ${fmtBytes(q.used)} din ${fmtBytes(q.limit)}` : null].filter(Boolean).join(' · ')),
       el('div', { class: 'row wrap' },
         btn('secondary small', 'external', 'Panoul albumului, pe site', () => siteOpen(`/fotograf/${a.code}`), { title: 'Domeniu propriu, brand, abonament și facturi se schimbă acolo' }))),
-    el('section', { class: 'group danger-zone' }, el('div', { class: 'group-head' }, el('h2', {}, 'Ștergerea albumului'), el('p', { class: 'muted' }, 'Șterge albumul, pozele și datele faciale de pe server. Nu se poate anula.')),
+    a.demo ? null : el('section', { class: 'group danger-zone' }, el('div', { class: 'group-head' }, el('h2', {}, 'Ștergerea albumului'), el('p', { class: 'muted' }, 'Șterge albumul, pozele și datele faciale de pe server. Nu se poate anula.')),
       el('div', { class: 'group-body' }, el('div', {}, btn('danger small', 'trash', 'Șterge albumul', deleteAlbum))))));
 }
 

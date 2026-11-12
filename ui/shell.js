@@ -61,6 +61,7 @@ async function enterApp() {
   render();
   startAttention();
   startInbox();
+  tourMaybe();
 }
 
 function drawOffline() {
@@ -119,20 +120,53 @@ function drawNav() {
 
 // ---- the album list ----
 async function loadAlbums() {
-  await guard(async () => { S.albums = (await api('GET', '/api/desktop/albums')).albums || []; });
+  await guard(async () => {
+    const all = (await api('GET', '/api/desktop/albums')).albums || [];
+    S.demo = all.find(a => a.demo) || null;  // the account's own demo album (three days, never counts in the plan)
+    S.albums = all.filter(a => !a.demo);
+  });
+  if (!S.demo && !ui.get('demoMade', false) && !ui.get('hideDemo', false)) await makeDemo(true);
   renderSide();
+}
+
+/** The demo album: the account's own copy, made once at the first sign-in and again whenever it asks for it. */
+async function makeDemo(quiet = false) {
+  const r = await guard(() => api('POST', '/api/desktop/demo'));
+  if (!r) return null;
+  ui.set('demoMade', true);
+  await guard(async () => {
+    const all = (await api('GET', '/api/desktop/albums')).albums || [];
+    S.demo = all.find(a => a.demo) || null;
+    S.albums = all.filter(a => !a.demo);
+  });
+  if (!quiet) { renderSide(); render(); }
+  return S.demo;
+}
+
+/** Hide the demo album and/or the tutorial from the panel; both stay one search away. */
+function hideIntro(what) {
+  if (what.includes('demo')) { ui.set('hideDemo', true); if (S.demo) closeTab(`album:${S.demo.code}`); }
+  if (what.includes('tour')) { ui.set('hideTour', true); ui.set('tour', 1); }
+  renderSide(); render();
+  toast('Le găsești oricând în căutare (' + keys(MOD, 'K') + '): scrie „Album demo” sau „Tutorial”.', 'info');
+}
+
+async function openDemo() {
+  ui.set('hideDemo', false);
+  const d = S.demo || await makeDemo();
+  if (d) { renderSide(); openAlbum(d.code); }
 }
 
 function renderSide() {
   const q = ($('#album-search').value || '').trim().toLowerCase();
-  const list = S.albums.filter(a => !q || a.name.toLowerCase().includes(q));
+  const list = [...(S.demo && !ui.get('hideDemo', false) ? [S.demo] : []), ...S.albums].filter(a => !q || a.name.toLowerCase().includes(q));
   $('#albums').replaceChildren(...list.map(a => {
     const thumb = a.thumb ? el('img', { src: abs(a.thumb), alt: '', loading: 'lazy' }) : el('span', { class: 'ph' });
     thumb.addEventListener('error', () => thumb.replaceWith(el('span', { class: 'ph' })), { once: true });
     const on = S.active === `album:${a.code}`;
-    return el('button', { type: 'button', class: `al-item${on ? ' on' : ''}`, dataset: { code: a.code }, title: a.name,
+    return el('button', { type: 'button', class: `al-item${on ? ' on' : ''}${a.demo ? ' demo' : ''}`, dataset: { code: a.code }, title: a.name,
       onclick: e => openAlbum(a.code, undefined, e.metaKey || e.ctrlKey) },
-    thumb, el('span', { class: 'lbl' }, el('b', {}, a.name), el('small', {}, [plural(a.photos, 'poză', 'poze'), fmtDay(a.event_date)].filter(Boolean).join(' · '))));
+    thumb, el('span', { class: 'lbl' }, el('b', {}, a.name), el('small', {}, a.demo ? el('em', { class: 'demo-tag' }, 'Demo') : null, [plural(a.photos, 'poză', 'poze'), fmtDay(a.event_date)].filter(Boolean).join(' · '))));
   }));
   if (!list.length) $('#albums').replaceChildren(el('p', { class: 'muted pad-s lbl' }, S.albums.length ? 'Niciun album cu acest nume.' : 'Nu ai încă niciun album.'));
 }
@@ -244,7 +278,7 @@ function render() {
   else if (t.kind === 'account') renderAccount();
   else if (t.kind === 'catalog') renderCatalog();
   else if (t.kind === 'album') {
-    stage.replaceChildren(el('div', { class: 'album-pane' }, el('header', { id: 'al-head' }), el('div', { class: 'tabs', id: 'tabs', role: 'tablist' }), el('div', { id: 'tab-body' })));
+    stage.replaceChildren(el('div', { class: 'album-pane' }, el('header', { id: 'al-head' }), el('div', { id: 'al-demo', class: 'demo-note', hidden: true }), el('div', { class: 'tabs', id: 'tabs', role: 'tablist' }), el('div', { id: 'tab-body' })));
     if (S.album) renderAlbum();
     else $('#tab-body').replaceChildren(el('p', { class: 'muted pad' }, 'Se încarcă albumul…'));
   }
@@ -291,11 +325,26 @@ function drawAlbumHead() {
     btn('icon-btn big', 'copy', null, () => copyText(a.share_url), { title: 'Copiază linkul pentru invitați', 'aria-label': 'Copiază linkul pentru invitați' }));
 }
 
+/** The demo album explains itself: what it is, how long it stays, and where the tutorial and the hide button are. */
+function drawDemoNote() {
+  const box = $('#al-demo'), a = S.album;
+  const mine = !!(a && S.demo && a.code === S.demo.code);
+  box.hidden = !mine;
+  if (!mine) return;
+  const left = Math.max(0, daysLeft(S.demo.expires_at));
+  box.replaceChildren(
+    el('div', {}, el('strong', {}, 'Albumul tău demo. Încearcă tot, fără grijă.'),
+      el('p', {}, `Încarcă poze, mută-le în categorii, pune stele, scrie notițe, deschide Distribuire. E doar al tău, nu intră în planul tău și dispare singur peste ${plural(left, 'zi', 'zile')}.`)),
+    btn('secondary small', 'sparkles', 'Tutorialul aplicației', () => tourStart()),
+    btn('quiet', null, 'Ascunde demo', () => hideIntro(['demo'])));
+}
+
 function renderAlbum() {
   const a = S.album;
   if (!a || !$('#al-head')) return;
   const hot = albumAttention(S.code);
   drawAlbumHead();
+  drawDemoNote();
   $('#tabs').replaceChildren(...INNER_TABS.map(([id, icon, label]) => el('button', { type: 'button', role: 'tab', class: S.tab === id ? 'on' : '',
     'aria-selected': String(S.tab === id), dataset: { tab: id },
     onclick: () => { if (S.tab === id) return; S.tab = id; sel.clear(); const t = activeTab(); if (t) t.inner = id; renderAlbum(); } },
@@ -361,8 +410,10 @@ function paletteItems() {
     { label: 'Catalog: caută fișiere pe discuri', icon: 'layers', run: () => openTab('catalog') },
     { label: 'Setări', icon: 'settings', run: () => openTab('prefs') },
     { label: 'Cont: profil, parolă, abonament', icon: 'user', run: () => openTab('account') },
+    { label: 'Tutorial', hint: 'Prezentarea aplicației', icon: 'sparkles', run: tourStart },
     { label: 'Scurtături de tastatură', hint: '?', icon: 'command', run: shortcutsDialog },
   ];
+  out.splice(4, 0, { label: 'Album demo', hint: 'Album de probă, al tău', icon: 'image', run: openDemo });
   for (const a of S.albums) out.push({ label: a.name, hint: 'Album', icon: 'image', run: () => openAlbum(a.code) });
   if (S.code) for (const [id, icon, label] of INNER_TABS) out.push({ label: `${S.album ? S.album.name : 'Album'} · ${label}`, hint: 'File', icon, run: () => openAlbum(S.code, id) });
   return out;

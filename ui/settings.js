@@ -55,6 +55,7 @@ function renderSettings() {
       segmented([{ value: 'all', icon: 'image', label: 'Tot albumul', hint: 'Fără recunoaștere facială' }, { value: 'both', icon: 'scan', label: 'Cu selfie și fețe', hint: 'Recunoaștere facială' }], f.mode,
         v => { f.mode = v; faceBox.hidden = v === 'all'; saveAccess(); }, 'Cum își găsesc invitații pozele'),
       faceBox),
+    albumMoneyGroup(a),
     group('Ce pot face invitații', 'Se aplică imediat.',
       pref('guest_notes', 'Notițe pe poze', 'Pot scrie ce vor retușat; le vezi în Distribuire.'),
       pref('face_list', 'Lista de fețe', 'Își aleg fața dintr-o listă, fără selfie.'),

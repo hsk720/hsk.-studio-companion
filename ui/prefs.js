@@ -16,7 +16,10 @@ async function renderPrefs() {
   const kv = (label, hint, ...kids) => el('div', { class: 'kv' }, el('span', { class: 'k' }, el('b', {}, label), hint ? el('small', { class: 'muted' }, hint) : null), el('span', { class: 'v' }, kids));
 
   stage.replaceChildren(el('div', { class: 'pad stack wide' },
-    el('div', {}, el('h1', {}, 'Setări'), el('p', { class: 'muted' }, 'Pentru un album anume, deschide-l și alege fila Setări album.')),
+    el('div', {}, el('h1', {}, 'Setări'), el('p', { class: 'muted' }, 'Pentru un album anume, deschide-l și alege Setări album din stânga.')),
+
+    group('Aspect', 'Implicit aplicația urmează tema calculatorului și se schimbă odată cu ea.',
+      kv('Tema', null, segmented(THEMES.map(([value, label]) => ({ value, label })), ui.get('theme', 'system'), v => { ui.set('theme', v); applyTheme(); }, 'Tema aplicației'))),
 
     group('Pornire și fundal', 'Aplicația lucrează și cu fereastra închisă, din bara de meniu sau de lângă ceas.',
       toggle('Pornește odată cu calculatorul', 'Fără fereastră: doar iconița, ca folderul să se urmărească de la prima pornire.', p.autostart, async on => { await setPref({ autostart: on }); }),
@@ -71,6 +74,9 @@ async function renderPrefs() {
         }, 'Editorul'),
       p.editor !== 'system' ? kv('Programul', 'Se deschid în el pozele de editat.', el('span', { class: 'path-box inline' }, p.editor_path || 'nealeasă'),
         btn('quiet', null, 'Alege altul', async () => { const f = await invoke('editor_pick'); if (f) { await setPref({ editor_path: f }); redraw(); } })) : el('p', { class: 'muted' }, 'Pozele se deschid în programul pe care îl are calculatorul pentru ele.')),
+
+    group('Finanțe', 'Registrul de venituri și cheltuieli rămâne doar pe acest calculator.',
+      toggle('Sunt plătitor de TVA', 'Cifrele din Finanțe se arată fără TVA, iar la fiecare sumă poți alege cota din factură.', ui.get('vatPayer', false), on => { ui.set('vatPayer', on); })),
 
     group('Siguranță', null,
       toggle('Cere confirmare înainte să șterg poze', 'Albumele se șterg oricum doar scriind numele lor.', ui.get('confirm-delete', true), on => ui.set('confirm-delete', on))),

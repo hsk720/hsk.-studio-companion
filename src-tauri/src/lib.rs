@@ -374,12 +374,13 @@ fn save_file(app: AppHandle, name: String, data: String, open: bool) -> Result<P
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|_| "Fișierul primit nu e valid.".to_string())?;
     let clean: String = name.chars().map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '-' }).collect();
-    let clean = if clean.to_lowercase().ends_with(".pdf") { clean } else { format!("{clean}.pdf") };
+    let ext = ["csv", "json"].into_iter().find(|e| clean.to_lowercase().ends_with(&format!(".{e}"))).unwrap_or("pdf");
+    let clean = if clean.to_lowercase().ends_with(&format!(".{ext}")) { clean } else { format!("{clean}.pdf") };
     let dir = app.path().download_dir().map_err(|_| "Nu găsesc folderul Descărcări.".to_string())?;
-    let (stem, mut path, mut n) = (clean.trim_end_matches(".pdf").to_string(), dir.join(&clean), 1);
+    let (stem, mut path, mut n) = (clean[..clean.len() - ext.len() - 1].to_string(), dir.join(&clean), 1);
     while path.exists() {
         n += 1;
-        path = dir.join(format!("{stem} ({n}).pdf"));
+        path = dir.join(format!("{stem} ({n}).{ext}"));
     }
     std::fs::write(&path, bytes).map_err(|_| "Nu am putut salva fișierul.".to_string())?;
     if open {

@@ -62,7 +62,7 @@ let attnTimer = 0;
 function startAttention() {
   clearInterval(attnTimer);
   refreshAttention();
-  attnTimer = setInterval(refreshAttention, 90000);
+  attnTimer = setInterval(refreshAttention, 300000); // the dashboard refreshes itself every 5 minutes
   addEventListener('focus', () => refreshAttention());
 }
 
@@ -93,6 +93,7 @@ async function refreshAttention() {
     if (quota.over) items.push({ id: 'quota:over', level: 'critical', icon: 'alert', title: 'Spațiul planului s-a umplut', text: `${fmtBytes(quota.used)} din ${fmtBytes(quota.limit)}. Încărcările noi pot fi refuzate. Șterge albume vechi sau schimbă planul.`, action: { label: 'Planul, pe site', run: () => siteOpen('/fotograf') } });
     else if (pct >= .85) items.push({ id: 'quota:near', level: 'warn', icon: 'alert', title: `Ai folosit ${Math.round(pct * 100)}% din spațiu`, text: `${fmtBytes(quota.used)} din ${fmtBytes(quota.limit)}.`, action: { label: 'Planul, pe site', run: () => siteOpen('/fotograf') }, dismissible: true });
   }
+  S.statsAt = Date.now();
   setAttention('albums', items);
   if (S.active === 'home') renderHome();
 }
@@ -112,25 +113,57 @@ function introGroup() {
     el('p', { class: 'muted' }, el('button', { class: 'quiet', type: 'button', onclick: () => hideIntro(['demo', 'tour']) }, 'Ascunde tot'), ' · le găsești oricând în căutare.')));
 }
 
+/** One album as a row of the dashboard: what it holds, how guests used it, when it goes away. */
+function dashRow(a) {
+  const m = S.stats[a.code] || {};
+  const found = m.searches ? Math.round(((m.found_searches || 0) / m.searches) * 100) : null;
+  const left = daysLeft(a.expires_at);
+  const tone = left <= 2 ? 'hot' : left <= 7 ? 'warm' : '';
+  return el('button', { type: 'button', class: 'drow', onclick: () => openAlbum(a.code) },
+    a.thumb ? el('img', { class: 'dthumb', src: a.thumb, alt: '', loading: 'lazy' }) : el('span', { class: 'dthumb blank' }, ico('image')),
+    el('span', { class: 'dname' }, el('b', {}, a.name), el('small', { class: 'muted' }, a.event_date ? fmtDay(a.event_date) : 'fără dată', a.demo ? ' · demo' : '')),
+    el('span', { class: 'dnum' }, nf.format(a.photos || 0)),
+    el('span', { class: 'dnum' }, m.face_count == null ? '–' : nf.format(m.face_count)),
+    el('span', { class: 'dnum' }, m.searches == null ? '–' : `${nf.format(m.searches)}${found == null ? '' : ` · ${found}%`}`),
+    el('span', { class: `dnum dleft ${tone}` }, left > 0 ? `${left} ${left === 1 ? 'zi' : 'zile'}` : 'azi'));
+}
+
 function renderHome() {
   const stage = $('#stage');
-  const stats = S.albums.map(a => S.stats[a.code]).filter(Boolean);
-  const photos = S.albums.reduce((n, a) => n + (a.photos || 0), 0);
-  const searches = stats.reduce((n, m) => n + (m.searches || 0), 0);
+  const real = S.albums.filter(a => !a.demo);
+  const stats = real.map(a => S.stats[a.code]).filter(Boolean);
+  const sum = key => stats.reduce((n, m) => n + (m[key] || 0), 0);
+  const photos = real.reduce((n, a) => n + (a.photos || 0), 0);
+  const searches = sum('searches'), found = sum('found_searches'), faces = sum('face_count');
   const q = (stats.find(m => m.quota) || {}).quota;
-  const stat = (label, value, extra) => el('div', { class: 'stat' }, el('dd', {}, value), el('dt', {}, label), extra || null);
-  stage.replaceChildren(el('div', { class: 'home pad stack' },
-    el('div', {}, el('h1', {}, 'Panou'), el('p', { class: 'muted' }, S.account ? `${S.account.name} · plan ${S.account.plan}` : '')),
-    attentionPanel(),
-    group('Pe scurt', null, el('dl', { class: 'stats' },
-      stat('Albume active', nf.format(S.albums.length)),
-      stat('Poze în total', nf.format(photos)),
-      stat('Căutări ale invitaților', nf.format(searches)),
-      q && q.limit ? stat('Spațiu folosit', `${Math.round((q.used / q.limit) * 100)}%`, el('div', { class: 'bar' }, el('i', { style: `width:${Math.min(100, Math.round((q.used / q.limit) * 100))}%` }))) : null)),
-    introGroup(),
-    S.albums.length ? null : group('Primul album', null, el('ol', { class: 'steps' },
-      el('li', {}, 'Apasă „Album nou” din stânga și dă-i un nume.'),
-      el('li', {}, 'Trage pozele sau un folder în fereastră. Fețele se caută singure.'),
-      el('li', {}, 'Trimite linkul invitaților din fila Distribuire.')))));
-  $('#stage').scrollTop = 0;
+  const pct = q && q.limit ? Math.min(100, Math.round((q.used / q.limit) * 100)) : null;
+  const next = [...real].sort((a, b) => a.expires_at - b.expires_at)[0];
+  const tile = (label, value, sub, extra) => el('div', { class: 'tile-k' }, el('small', {}, label), el('b', {}, value), el('span', { class: 'muted' }, sub || ' '), extra || null);
+  const when = S.statsAt ? new Date(S.statsAt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '';
+  const intro = introGroup();
+  const rows = [...S.albums].sort((a, b) => (a.demo - b.demo) || (b.created_at - a.created_at));
+  stage.replaceChildren(el('div', { class: 'dash' },
+    el('div', { class: 'dash-head' },
+      el('div', {}, el('h1', {}, 'Panou'), el('p', { class: 'muted' }, S.account ? `${S.account.name} · plan ${S.account.plan}` : '')),
+      el('div', { class: 'dash-upd muted' }, when ? `Actualizat la ${when} · se reîmprospătează la 5 minute` : '',
+        el('button', { type: 'button', class: 'icon-btn', title: 'Reîmprospătează acum', 'aria-label': 'Reîmprospătează acum', onclick: () => refreshAttention() }, ico('refresh')))),
+    el('div', { class: 'kpis' },
+      tile('Albume active', nf.format(real.length), next ? `Următorul expiră în ${Math.max(0, daysLeft(next.expires_at))} zile` : 'Niciun album încă'),
+      tile('Poze în total', nf.format(photos), real.length ? `${nf.format(Math.round(photos / real.length))} în medie pe album` : ''),
+      tile('Fețe recunoscute', nf.format(faces), photos ? `${(faces / photos).toFixed(1).replace('.', ',')} pe poză` : ''),
+      tile('Căutări ale invitaților', nf.format(searches), searches ? `${Math.round((found / searches) * 100)}% și-au găsit pozele` : 'încă nicio căutare'),
+      tile('Spațiu folosit', pct == null ? '–' : `${pct}%`, q && q.limit ? `${fmtBytes(q.used)} din ${fmtBytes(q.limit)}` : '', pct == null ? null : el('div', { class: 'bar' }, el('i', { style: `width:${pct}%` })))),
+    el('div', { class: 'dash-body' },
+      el('section', { class: 'dpanel dalbums' },
+        el('div', { class: 'group-head' }, el('h2', {}, 'Albumele tale'), el('p', { class: 'muted' }, 'Apasă pe un album ca să-l deschizi.')),
+        rows.length ? el('div', { class: 'dtable' },
+          el('div', { class: 'drow dhead' }, el('span', {}), el('span', {}, 'Album'), el('span', { class: 'dnum' }, 'Poze'), el('span', { class: 'dnum' }, 'Fețe'), el('span', { class: 'dnum' }, 'Căutări · găsite'), el('span', { class: 'dnum' }, 'Expiră în')),
+          el('div', { class: 'dscroll' }, rows.map(dashRow)))
+          : el('ol', { class: 'steps' },
+            el('li', {}, 'Apasă „Album nou” din stânga și dă-i un nume.'),
+            el('li', {}, 'Trage pozele sau un folder în fereastră. Fețele se caută singure.'),
+            el('li', {}, 'Trimite linkul invitaților din fila Distribuire.'))),
+      el('div', { class: 'dside' },
+        el('div', { class: 'dpanel' }, attentionPanel()),
+        intro ? el('div', { class: 'dpanel' }, intro) : null))));
 }

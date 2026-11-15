@@ -111,6 +111,7 @@ function drawNav() {
     ['home', 'home', 'Panou', attention ? { n: attention } : null],
     ['watch', 'folder', 'Folder smart', S.setup && S.setup.watching ? { dot: true } : null],
     ['catalog', 'layers', 'Catalog', null],
+    ['finance', 'chart', 'Finanțe', null],
     ['prefs', 'settings', 'Setări', null],
   ];
   $('#nav').replaceChildren(...items.map(([id, icon, label, badge]) => el('button', { type: 'button', class: `nav-btn${S.active === id ? ' on' : ''}`, title: label, dataset: { go: id },
@@ -164,9 +165,14 @@ function renderSide() {
     const thumb = a.thumb ? el('img', { src: abs(a.thumb), alt: '', loading: 'lazy' }) : el('span', { class: 'ph' });
     thumb.addEventListener('error', () => thumb.replaceWith(el('span', { class: 'ph' })), { once: true });
     const on = S.active === `album:${a.code}`;
-    return el('button', { type: 'button', class: `al-item${on ? ' on' : ''}${a.demo ? ' demo' : ''}`, dataset: { code: a.code }, title: a.name,
+    const item = el('button', { type: 'button', class: `al-item${on ? ' on' : ''}${a.demo ? ' demo' : ''}`, dataset: { code: a.code }, title: a.name,
       onclick: e => openAlbum(a.code, undefined, e.metaKey || e.ctrlKey) },
     thumb, el('span', { class: 'lbl' }, el('b', {}, a.name), el('small', {}, a.demo ? el('em', { class: 'demo-tag' }, 'Demo') : null, [plural(a.photos, 'poză', 'poze'), fmtDay(a.event_date)].filter(Boolean).join(' · '))));
+    if (!on) return el('div', { class: 'al-group' }, item);
+    const hot = albumAttention(a.code);
+    return el('div', { class: 'al-group open' }, item, el('div', { class: 'al-subs', role: 'group', 'aria-label': `Paginile albumului ${a.name}` },
+      INNER_TABS.map(([id, icon, label]) => el('button', { type: 'button', class: `al-sub${S.tab === id ? ' on' : ''}`, dataset: { tab: id }, 'aria-current': S.tab === id ? 'page' : null,
+        onclick: () => openAlbum(a.code, id) }, ico(icon), el('span', { class: 'grow' }, label), id === 'share' && hot ? el('em', { class: 'badge-n' }, String(hot)) : null))));
   }));
   if (!list.length) $('#albums').replaceChildren(el('p', { class: 'muted pad-s lbl' }, S.albums.length ? 'Niciun album cu acest nume.' : 'Nu ai încă niciun album.'));
 }
@@ -189,7 +195,7 @@ function openTab(id, { background = false } = {}) {
   let t = tabById(id);
   if (!t) {
     const kind = id.split(':')[0];
-    t = { id, kind, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog' }[id] || id };
+    t = { id, kind, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog', finance: 'Finanțe' }[id] || id };
     S.tabs.push(t);
   }
   if (!background) activate(id);
@@ -224,13 +230,13 @@ function closeTab(id) {
   if (wasActive) { S.active = ''; activate((S.tabs[i] || S.tabs[i - 1]).id); } else renderTabs();
 }
 
-const persistTabs = () => ui.set('tabs', S.tabs.filter(t => t.kind === 'album' || ['watch', 'prefs', 'account', 'catalog'].includes(t.id)).map(t => t.id));
+const persistTabs = () => ui.set('tabs', S.tabs.filter(t => t.kind === 'album' || ['watch', 'prefs', 'account', 'catalog', 'finance'].includes(t.id)).map(t => t.id));
 function restoreTabs() {
   for (const id of ui.get('tabs', [])) {
     if (id.startsWith('album:')) {
       const code = id.slice(6);
       if (S.albums.some(a => a.code === code) && !tabById(id)) S.tabs.push(albumTab(code));
-    } else if (['watch', 'prefs', 'account', 'catalog'].includes(id) && !tabById(id)) S.tabs.push({ id, kind: id, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog' }[id] });
+    } else if (['watch', 'prefs', 'account', 'catalog', 'finance'].includes(id) && !tabById(id)) S.tabs.push({ id, kind: id, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog', finance: 'Finanțe' }[id] });
   }
   const last = ui.get('startup', 'last') === 'home' ? 'home' : ui.get('active', 'home');
   S.active = tabById(last) ? last : 'home';
@@ -249,13 +255,13 @@ function openAlbum(code, inner, background = false) {
   if (!tabById(id)) S.tabs.push(albumTab(code));
   const t = tabById(id);
   if (inner) t.inner = inner;
-  if (inner && S.active === id) { S.tab = inner; renderAlbum(); persistTabs(); return; }
+  if (inner && S.active === id) { if (S.tab !== inner) sel.clear(); S.tab = inner; renderAlbum(); persistTabs(); return; }
   openTab(id, { background });
 }
 
 function renderTabs() {
   $('#tabstrip').replaceChildren(...S.tabs.map(t => {
-    const icon = { home: 'home', album: 'image', watch: 'folder', prefs: 'settings', account: 'user', catalog: 'layers' }[t.kind];
+    const icon = { home: 'home', album: 'image', watch: 'folder', prefs: 'settings', account: 'user', catalog: 'layers', finance: 'chart' }[t.kind];
     const badge = t.kind === 'album' ? albumAttention(t.code) : 0;
     return el('div', { class: `tab${t.id === S.active ? ' on' : ''}`, role: 'tab', 'aria-selected': String(t.id === S.active), dataset: { id: t.id } },
       el('button', { type: 'button', class: 'tab-main', onclick: () => activate(t.id), title: t.title, onauxclick: e => { if (e.button === 1) closeTab(t.id); } },
@@ -263,7 +269,8 @@ function renderTabs() {
       t.kind === 'home' ? null : el('button', { type: 'button', class: 'tab-x', 'aria-label': `Închide ${t.title}`, onclick: () => closeTab(t.id) }, ico('x')));
   }));
   drawNav();
-  $$('.al-item').forEach(b => b.classList.toggle('on', S.active === `album:${b.dataset.code}`));
+  renderSide();
+  const on = $('.tab.on'); if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'nearest', block: 'nearest' });
   ui.set('active', S.active);
 }
 
@@ -277,8 +284,9 @@ function render() {
   else if (t.kind === 'prefs') renderPrefs();
   else if (t.kind === 'account') renderAccount();
   else if (t.kind === 'catalog') renderCatalog();
+  else if (t.kind === 'finance') renderFinance();
   else if (t.kind === 'album') {
-    stage.replaceChildren(el('div', { class: 'album-pane' }, el('header', { id: 'al-head' }), el('div', { id: 'al-demo', class: 'demo-note', hidden: true }), el('div', { class: 'tabs', id: 'tabs', role: 'tablist' }), el('div', { id: 'tab-body' })));
+    stage.replaceChildren(el('div', { class: 'album-pane' }, el('header', { id: 'al-head' }), el('div', { id: 'al-demo', class: 'demo-note', hidden: true }), el('div', { id: 'tab-body' })));
     if (S.album) renderAlbum();
     else $('#tab-body').replaceChildren(el('p', { class: 'muted pad' }, 'Se încarcă albumul…'));
   }
@@ -345,10 +353,7 @@ function renderAlbum() {
   const hot = albumAttention(S.code);
   drawAlbumHead();
   drawDemoNote();
-  $('#tabs').replaceChildren(...INNER_TABS.map(([id, icon, label]) => el('button', { type: 'button', role: 'tab', class: S.tab === id ? 'on' : '',
-    'aria-selected': String(S.tab === id), dataset: { tab: id },
-    onclick: () => { if (S.tab === id) return; S.tab = id; sel.clear(); const t = activeTab(); if (t) t.inner = id; renderAlbum(); } },
-  ico(icon), el('span', {}, label), id === 'share' && hot ? el('em', { class: 'badge-n' }, String(hot)) : null)));
+  renderSide();  // the album's pages live in the sidebar
   (INNER[S.tab] || INNER.photos)();
 }
 
@@ -408,6 +413,7 @@ function paletteItems() {
     { label: 'Album nou', hint: keys(MOD, 'N'), icon: 'plus', run: () => newAlbumDialog() },
     { label: 'Folder smart', icon: 'folder', run: () => openTab('watch') },
     { label: 'Catalog: caută fișiere pe discuri', icon: 'layers', run: () => openTab('catalog') },
+    { label: 'Finanțe: venituri, cheltuieli, profit', icon: 'chart', run: () => openTab('finance') },
     { label: 'Setări', icon: 'settings', run: () => openTab('prefs') },
     { label: 'Cont: profil, parolă, abonament', icon: 'user', run: () => openTab('account') },
     { label: 'Tutorial', hint: 'Prezentarea aplicației', icon: 'sparkles', run: tourStart },

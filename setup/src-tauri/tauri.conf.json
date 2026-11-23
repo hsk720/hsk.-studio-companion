@@ -29,7 +29,10 @@
   },
   "bundle": {
     "active": false,
-    "icon": ["../../src-tauri/icons/icon.ico", "../../src-tauri/icons/icon.png"],
+    "icon": [
+      "../icons/setup.ico",
+      "../icons/setup.png"
+    ],
     "copyright": "© hsk. photos"
   }
 }

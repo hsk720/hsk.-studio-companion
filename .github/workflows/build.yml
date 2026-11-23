@@ -1,6 +1,6 @@
 # Builds the installers: one universal .dmg (Apple Silicon + Intel) and, for Windows, "hsk. studio Setup":
 # our own setup window (setup/) carrying Tauri's NSIS installer inside it.
-# Runs on a version tag (v0.1.0) or by hand; the files are attached to a draft release.
+# Runs on a version tag (v0.1.0) or by hand; the release is published right away with the files attached.
 name: build
 
 on:
@@ -47,7 +47,7 @@ jobs:
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
           releaseName: "hsk. studio v__VERSION__"
-          releaseDraft: true
+          releaseDraft: false
           args: ${{ matrix.args }}
 
       # Windows: put the NSIS installer inside the hsk. setup window, build it, attach it to the same release

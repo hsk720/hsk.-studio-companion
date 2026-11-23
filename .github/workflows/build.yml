@@ -1,4 +1,5 @@
-# Builds the installers: .dmg (Apple Silicon + Intel) and the Windows setup .exe.
+# Builds the installers: one universal .dmg (Apple Silicon + Intel) and, for Windows, "hsk. studio Setup":
+# our own setup window (setup/) carrying Tauri's NSIS installer inside it.
 # Runs on a version tag (v0.1.0) or by hand; the files are attached to a draft release.
 name: build
 
@@ -16,14 +17,11 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            args: --target aarch64-apple-darwin
-            target: aarch64-apple-darwin
-          - os: macos-latest
-            args: --target x86_64-apple-darwin
-            target: x86_64-apple-darwin
+            args: --target universal-apple-darwin
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
           - os: windows-latest
             args: ""
-            target: ""
+            targets: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -32,10 +30,12 @@ jobs:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            setup/src-tauri
       - run: npm install
       - run: cargo test --lib
         working-directory: src-tauri
@@ -49,3 +49,22 @@ jobs:
           releaseName: "hsk. studio v__VERSION__"
           releaseDraft: true
           args: ${{ matrix.args }}
+
+      # Windows: put the NSIS installer inside the hsk. setup window, build it, attach it to the same release
+      - name: hsk. studio Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = node -p "require('./src-tauri/tauri.conf.json').version"
+          $tag = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' } else { "v$version" }
+          $nsis = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $nsis) { throw "NSIS installer not found" }
+          Copy-Item $nsis.FullName setup/src-tauri/payload/setup-nsis.exe -Force
+          Push-Location setup
+          node ../node_modules/@tauri-apps/cli/tauri.js build --no-bundle
+          Pop-Location
+          $out = "hsk-studio-setup-$version.exe"
+          Copy-Item setup/src-tauri/target/release/hsk-studio-setup.exe $out
+          gh release upload $tag $out --clobber

@@ -67,11 +67,11 @@ const ui = {
   set(key, value) { try { localStorage.setItem(`hsk.${key}`, JSON.stringify(value)); } catch { /* storage blocked */ } },
 };
 
-/** The look: "system" follows the computer (and changes with it), "light" and "dark" stay as chosen. */
+/** The look: dark by default; "system" follows the computer (and changes with it), "light" and "dark" stay as chosen. */
 const THEMES = [['system', 'Ca sistemul'], ['light', 'Luminoasă'], ['dark', 'Întunecată']];
 const themeQuery = matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
-  const pick = ui.get('theme', 'system');
+  const pick = ui.get('theme', 'dark');
   document.documentElement.dataset.theme = pick === 'light' || pick === 'dark' ? pick : (themeQuery.matches ? 'dark' : 'light');
 }
 themeQuery.addEventListener('change', applyTheme);

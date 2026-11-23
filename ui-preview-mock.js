@@ -2,6 +2,8 @@
 // Preview in a browser: the Tauri bridge is replaced by calls to the public demo album (its admin view key is public).
 // Only for the preview page on hsk.photos; the installed app never loads this file.
 (() => {
+  // the preview always shows the demo album, even if it was hidden in an earlier visit (in the app, "Ascunde" stays hidden)
+  try { localStorage.removeItem('hsk.hideDemo'); } catch {}
   const DEMO = { 'x-admin-key': 'demo', 'Content-Type': 'application/json' };
   const only = what => () => Promise.reject(new Error(`${what} funcționează doar în aplicația instalată.`));
   let setup = { folder: null, album: null, album_name: '', mode: 'original', watching: false };
@@ -41,6 +43,23 @@
     save_file: ({ name, data }) => { const a = Object.assign(document.createElement('a'), { href: `data:application/pdf;base64,${data}`, download: name }); a.click(); return `/Descărcări/${name}`; },
     editor_detect: ({ kind }) => (kind === 'lightroom' ? '/Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app' : null), editor_pick: () => '/Applications/Affinity Photo 2.app',
     xmp_mark: ({ names }) => ({ marked: names.length, missing: 0 }),
+    // Selecție: a sample card (made from the demo photos) with bursts, blurred and burnt frames
+    cull_scan: async () => {
+      const list = await (await fetch('/static/test/cull/frames.json')).json();
+      for (let i = 0; i <= list.length; i += 6) { emit('cull-progress', { done: Math.min(i, list.length), total: list.length }); await new Promise(r => setTimeout(r, 120)); }
+      return list.map((f, i) => ({ name: f.file.replace('.jpg', '.CR3'), path: `/static/test/cull/${f.file}`, src: `/static/test/cull/${f.file}`, t: f.t, burst: f.burst,
+        sharp: f.blur ? 0.18 + (i % 3) * 0.05 : 0.6 + ((i * 37) % 35) / 100, faces: 1, eyes_closed: f.eyes, clip: f.over ? 0.42 : ((i * 13) % 7) / 100,
+        p_in: { 3: 0.44, 6: 0.58, 11: 0.52, 18: 0.39, 23: 0.61 }[i] }));
+    },
+    cull_preview: ({ path }) => path,
+    cull_apply: ({ reject }) => ({ moved: reject.length, missing: 0 }),
+    // what was learned: ?mode=new (nothing yet), ?mode=learn (3 albums), ?mode=auto (deciding alone)
+    cull_style_get: () => {
+      const m = new URLSearchParams(location.search).get('mode') || 'learn';
+      const w = [-6, 9, -7, -12, -1.5, 2.5, 0, 6];
+      return m === 'new' ? null : m === 'auto' ? { albums: 11, agree: [0.92, 0.93], w } : { albums: 3, agree: [0.79, 0.84], w };
+    },
+    cull_style_set: () => null,
     site_open: a => window.open(`https://hsk.photos${a.path}`, '_blank', 'noopener'),
     api_call: async ({ method, path, body }) => {
       if (path === '/api/desktop/me') return { account: { name: profile.name, plan: planDb.find(x => x.id === planNow).name, owner: false, avatar: profile.avatar, app_access: !location.search.includes('locked') }, max_photo_mb: 60, retention: [30, 90, 365], terms_ok: true,
@@ -59,6 +78,12 @@
         return { ...profile };
       }
       if (method === 'POST' && path === '/api/albums') throw new Error('În previzualizare nu se pot crea albume. Aplicația instalată le creează pe contul tău.');
+      // the assistant: a made-up brief (the demo album has no events); the answers are real, from the server, about the demo album
+      if (method === 'GET' && path === '/api/desktop/assistant') return { name: profile.name, configured: true, brief: [
+        { icon: 'calendar', title: 'Sâmbătă: Nunta Ana & Mihai', text: 'Pregătește cartonașele cu codul QR pentru mese și pornește Folder smart pe exportul evenimentului.', act: { label: 'Distribuire', open: 'DEMO', tab: 'share' } },
+        { icon: 'message', title: 'Album demo: 3 notițe noi de la invitați', text: 'Ce vor retușat. Le bifezi în Distribuire când sunt gata.', act: { label: 'Citește', open: 'DEMO', tab: 'share' } },
+        { icon: 'star', title: 'Botez Matei: 84 de căutări reușite', text: 'Invitații și-au găsit pozele. E un moment bun să ceri o recenzie.', act: { label: 'Cere o recenzie', ask: 'Scrie un mesaj de mulțumire cu cerere de recenzie pentru familia lui Matei.' } } ] };
+      if (method === 'POST' && path === '/api/desktop/assistant') path = '/api/preview/assistant';
       if (method === 'POST' && path === '/api/desktop/demo') return { code: 'DEMO', created: false };
       if (path === '/api/desktop/albums') {
         const m = await (await fetch('/api/albums/DEMO/manage?photos=false', { headers: DEMO })).json();

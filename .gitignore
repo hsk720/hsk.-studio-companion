@@ -1,3 +1,8 @@
 src-tauri/target/
 src-tauri/gen/
 .DS_Store
+setup/src-tauri/target/
+setup/src-tauri/gen/
+setup/src-tauri/payload/
+graphify-out/
+.graphifyignore

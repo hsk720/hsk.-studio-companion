@@ -4,6 +4,7 @@ mod api;
 mod auth;
 mod catalog;
 mod config;
+mod cull;
 mod editors;
 mod inbox;
 mod keyring;
@@ -448,6 +449,68 @@ async fn catalog_search(app: AppHandle, query: String, limit: usize) -> catalog:
     tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().catalog.search(&query, limit.clamp(1, 500))).await.unwrap_or_default()
 }
 
+// ---- Selecție ----
+
+fn cull_cache(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path().app_cache_dir().map(|d| d.join("cull")).map_err(|_| "Nu găsesc folderul de lucru al aplicației.".to_string())
+}
+
+/// Measures every frame of the folder; "cull-progress" carries {done, total} while it works.
+#[tauri::command]
+async fn cull_scan(app: AppHandle, folder: PathBuf) -> Result<Vec<cull::Frame>, String> {
+    if !folder.is_dir() {
+        return Err("Folderul nu mai există. Alege-l din nou.".into());
+    }
+    let cache = cull_cache(&app)?;
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        cull::scan(&folder, &cache, |done, total| {
+            let _ = handle.emit("cull-progress", serde_json::json!({ "done": done, "total": total }));
+        })
+    })
+    .await
+    .map_err(|_| "Analiza s-a oprit neașteptat.".to_string())
+}
+
+/// The large picture of one frame, made during the scan.
+#[tauri::command]
+async fn cull_preview(app: AppHandle, path: PathBuf) -> Result<String, String> {
+    use base64::Engine;
+    let file = cull::view_path(&cull_cache(&app)?, &path);
+    let bytes = tokio::fs::read(&file).await.map_err(|_| "Previzualizarea nu mai există. Analizează folderul din nou.".to_string())?;
+    Ok(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+/// Moves the dropped frames into "Respinse". The kept ones are not touched.
+#[tauri::command]
+async fn cull_apply(folder: PathBuf, reject: Vec<PathBuf>) -> Result<cull::Moved, String> {
+    if !folder.is_dir() {
+        return Err("Folderul nu mai există. Alege-l din nou.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || cull::reject(&folder, &reject)).await.map_err(|_| "Nu am putut muta cadrele.".to_string())
+}
+
+fn cull_style_file(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path().app_config_dir().map(|d| d.join("cull-style.json")).map_err(|_| "Nu găsesc folderul de setări.".to_string())
+}
+
+/// What the app learned about the photographer's choices (weights and a sample of past decisions).
+#[tauri::command]
+fn cull_style_get(app: AppHandle) -> Value {
+    cull_style_file(&app).ok().and_then(|f| std::fs::read(f).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null)
+}
+
+#[tauri::command]
+fn cull_style_set(app: AppHandle, style: Value) -> Result<(), String> {
+    let file = cull_style_file(&app)?;
+    if let Some(dir) = file.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let tmp = file.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec(&style).map_err(|e| e.to_string())?).map_err(|_| "Nu am putut salva stilul învățat.".to_string())?;
+    std::fs::rename(&tmp, &file).map_err(|_| "Nu am putut salva stilul învățat.".to_string())
+}
+
 /// The window may only open pages of the site.
 #[tauri::command]
 fn site_open(app: AppHandle, path: String) -> Result<(), String> {
@@ -576,6 +639,11 @@ pub fn run() {
             catalog_remove,
             catalog_search,
             site_open,
+            cull_scan,
+            cull_preview,
+            cull_apply,
+            cull_style_get,
+            cull_style_set,
         ])
         .run(tauri::generate_context!())
         .expect("hsk. studio could not start");

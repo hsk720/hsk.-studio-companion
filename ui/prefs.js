@@ -19,7 +19,7 @@ async function renderPrefs() {
     el('div', {}, el('h1', {}, 'Setări'), el('p', { class: 'muted' }, 'Pentru un album anume, deschide-l și alege Setări album din stânga.')),
 
     group('Aspect', 'Implicit aplicația urmează tema calculatorului și se schimbă odată cu ea.',
-      kv('Tema', null, segmented(THEMES.map(([value, label]) => ({ value, label })), ui.get('theme', 'system'), v => { ui.set('theme', v); applyTheme(); }, 'Tema aplicației'))),
+      kv('Tema', null, segmented(THEMES.map(([value, label]) => ({ value, label })), ui.get('theme', 'dark'), v => { ui.set('theme', v); applyTheme(); }, 'Tema aplicației'))),
 
     group('Pornire și fundal', 'Aplicația lucrează și cu fereastra închisă, din bara de meniu sau de lângă ceas.',
       toggle('Pornește odată cu calculatorul', 'Fără fereastră: doar iconița, ca folderul să se urmărească de la prima pornire.', p.autostart, async on => { await setPref({ autostart: on }); }),

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<title>Instalare hsk. studio</title>
+<link rel="stylesheet" href="setup.css">
+</head>
+<body>
+<div class="win">
+  <aside class="side" data-tauri-drag-region>
+    <p class="brand" data-tauri-drag-region><b>hsk.</b> <span>studio</span></p>
+    <ol class="steps" id="steps">
+      <li class="st on"><i>1</i>Bun venit</li>
+      <li class="st"><i>2</i>Instalare</li>
+      <li class="st"><i>3</i>Gata</li>
+    </ol>
+    <p class="foot" id="version">hsk.photos</p>
+  </aside>
+
+  <main class="main">
+    <div class="drag" data-tauri-drag-region></div>
+    <div class="tb">
+      <button type="button" id="min" aria-label="Minimizează">–</button>
+      <button type="button" id="close" aria-label="Închide">✕</button>
+    </div>
+
+    <section class="page" id="p1">
+      <img class="hero" src="icon.png" alt="">
+      <h1 id="p1-title">Instalează hsk. studio</h1>
+      <p class="lead">Albumele tale, direct de pe calculator: Selecția cardului, încărcarea din folderul de export și albumele trimise invitaților.</p>
+      <div class="card">
+        <p class="lbl">Unde se instalează</p>
+        <div class="path"><span id="dir"></span><button class="btn sec" type="button" id="change">Schimbă</button></div>
+        <label class="sw"><span class="grow">Scurtătură pe desktop<small>Pentru deschidere rapidă.</small></span>
+          <input type="checkbox" id="desktop" checked><i class="tg"></i></label>
+        <label class="sw"><span class="grow">Pornește odată cu Windows<small>Ca să urce singur pozele exportate.</small></span>
+          <input type="checkbox" id="autostart"><i class="tg"></i></label>
+      </div>
+      <div class="acts"><span class="grow">Fără drepturi de administrator</span>
+        <button class="btn sec" type="button" id="cancel">Renunță</button>
+        <button class="btn pri" type="button" id="go">Instalează</button></div>
+    </section>
+
+    <section class="page" id="p2" hidden>
+      <h1 id="p2-title">Se instalează…</h1>
+      <p class="lead" id="p2-lead">Durează câteva secunde. Poți lăsa fereastra deschisă.</p>
+      <div class="bar"><b id="bar"></b></div>
+      <ul class="log">
+        <li id="l-files">Pregătesc fișierele</li>
+        <li id="l-install">Instalez aplicația</li>
+        <li id="l-shortcuts">Scurtăturile și pornirea</li>
+      </ul>
+      <p class="err" id="err" role="alert" hidden></p>
+      <div class="tips">
+        <div class="tip"><b>Selecția</b>Bagi cardul și alege singură cadrele bune.</div>
+        <div class="tip"><b>Folder smart</b>Ce exporți din Lightroom urcă singur în album.</div>
+        <div class="tip"><b>Proiecție</b>Pozele noi pe ecranul din sală, cu QR.</div>
+      </div>
+      <div class="acts"><span class="grow" id="pct">0%</span>
+        <button class="btn sec" type="button" id="retry" hidden>Încearcă din nou</button></div>
+    </section>
+
+    <section class="page" id="p3" hidden>
+      <img class="hero" src="icon.png" alt="">
+      <h1 id="p3-title">Gata, hsk. studio e instalat</h1>
+      <p class="lead">La prima deschidere te conectezi cu contul hsk. photos. Durează un minut.</p>
+      <div class="card">
+        <label class="sw"><span class="grow">Deschide aplicația acum<small>Pornește turul de jumătate de minut.</small></span>
+          <input type="checkbox" id="open" checked><i class="tg"></i></label>
+      </div>
+      <div class="acts"><span class="grow"></span><button class="btn pri" type="button" id="done">Gata</button></div>
+    </section>
+  </main>
+</div>
+<script src="setup.js"></script>
+</body>
+</html>

@@ -110,6 +110,7 @@ function drawNav() {
   const items = [
     ['home', 'home', 'Panou', attention ? { n: attention } : null],
     ['watch', 'folder', 'Folder smart', S.setup && S.setup.watching ? { dot: true } : null],
+    ['cull', 'wand', 'Selecție', null],
     ['catalog', 'layers', 'Catalog', null],
     ['finance', 'chart', 'Finanțe', null],
     ['prefs', 'settings', 'Setări', null],
@@ -195,7 +196,7 @@ function openTab(id, { background = false } = {}) {
   let t = tabById(id);
   if (!t) {
     const kind = id.split(':')[0];
-    t = { id, kind, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog', finance: 'Finanțe' }[id] || id };
+    t = { id, kind, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog', cull: 'Selecție', finance: 'Finanțe' }[id] || id };
     S.tabs.push(t);
   }
   if (!background) activate(id);
@@ -230,13 +231,13 @@ function closeTab(id) {
   if (wasActive) { S.active = ''; activate((S.tabs[i] || S.tabs[i - 1]).id); } else renderTabs();
 }
 
-const persistTabs = () => ui.set('tabs', S.tabs.filter(t => t.kind === 'album' || ['watch', 'prefs', 'account', 'catalog', 'finance'].includes(t.id)).map(t => t.id));
+const persistTabs = () => ui.set('tabs', S.tabs.filter(t => t.kind === 'album' || ['watch', 'prefs', 'account', 'catalog', 'cull', 'finance'].includes(t.id)).map(t => t.id));
 function restoreTabs() {
   for (const id of ui.get('tabs', [])) {
     if (id.startsWith('album:')) {
       const code = id.slice(6);
       if (S.albums.some(a => a.code === code) && !tabById(id)) S.tabs.push(albumTab(code));
-    } else if (['watch', 'prefs', 'account', 'catalog', 'finance'].includes(id) && !tabById(id)) S.tabs.push({ id, kind: id, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog', finance: 'Finanțe' }[id] });
+    } else if (['watch', 'prefs', 'account', 'catalog', 'cull', 'finance'].includes(id) && !tabById(id)) S.tabs.push({ id, kind: id, title: { watch: 'Folder smart', prefs: 'Setări', account: 'Cont', catalog: 'Catalog', cull: 'Selecție', finance: 'Finanțe' }[id] });
   }
   const last = ui.get('startup', 'last') === 'home' ? 'home' : ui.get('active', 'home');
   S.active = tabById(last) ? last : 'home';
@@ -261,7 +262,7 @@ function openAlbum(code, inner, background = false) {
 
 function renderTabs() {
   $('#tabstrip').replaceChildren(...S.tabs.map(t => {
-    const icon = { home: 'home', album: 'image', watch: 'folder', prefs: 'settings', account: 'user', catalog: 'layers', finance: 'chart' }[t.kind];
+    const icon = { home: 'home', album: 'image', watch: 'folder', prefs: 'settings', account: 'user', catalog: 'layers', cull: 'wand', finance: 'chart' }[t.kind];
     const badge = t.kind === 'album' ? albumAttention(t.code) : 0;
     return el('div', { class: `tab${t.id === S.active ? ' on' : ''}`, role: 'tab', 'aria-selected': String(t.id === S.active), dataset: { id: t.id } },
       el('button', { type: 'button', class: 'tab-main', onclick: () => activate(t.id), title: t.title, onauxclick: e => { if (e.button === 1) closeTab(t.id); } },
@@ -284,6 +285,7 @@ function render() {
   else if (t.kind === 'prefs') renderPrefs();
   else if (t.kind === 'account') renderAccount();
   else if (t.kind === 'catalog') renderCatalog();
+  else if (t.kind === 'cull') renderCull();
   else if (t.kind === 'finance') renderFinance();
   else if (t.kind === 'album') {
     stage.replaceChildren(el('div', { class: 'album-pane' }, el('header', { id: 'al-head' }), el('div', { id: 'al-demo', class: 'demo-note', hidden: true }), el('div', { id: 'tab-body' })));
@@ -412,11 +414,13 @@ function paletteItems() {
     { label: 'Panou', hint: 'Prezentare și atenție', icon: 'home', run: () => openTab('home') },
     { label: 'Album nou', hint: keys(MOD, 'N'), icon: 'plus', run: () => newAlbumDialog() },
     { label: 'Folder smart', icon: 'folder', run: () => openTab('watch') },
+    { label: 'Selecție: alege cadrele de pe card', icon: 'wand', run: () => openTab('cull') },
     { label: 'Catalog: caută fișiere pe discuri', icon: 'layers', run: () => openTab('catalog') },
     { label: 'Finanțe: venituri, cheltuieli, profit', icon: 'chart', run: () => openTab('finance') },
     { label: 'Setări', icon: 'settings', run: () => openTab('prefs') },
     { label: 'Cont: profil, parolă, abonament', icon: 'user', run: () => openTab('account') },
-    { label: 'Tutorial', hint: 'Prezentarea aplicației', icon: 'sparkles', run: tourStart },
+    { label: 'Tutorial', hint: 'Prezentarea aplicației', icon: 'sparkles', run: () => tourStart('app') },
+    { label: 'Tutorial Selecție', hint: 'Cum alegi cadrele', icon: 'sparkles', run: () => { openTab('cull'); if (CULL.frames.length) setTimeout(() => tourStart('cull'), 300); else toast('Alege întâi folderul cu cadre. Tutorialul pornește singur după analiză.', 'info'); } },
     { label: 'Scurtături de tastatură', hint: '?', icon: 'command', run: shortcutsDialog },
   ];
   out.splice(4, 0, { label: 'Album demo', hint: 'Album de probă, al tău', icon: 'image', run: openDemo });

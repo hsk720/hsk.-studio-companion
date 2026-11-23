@@ -131,3 +131,23 @@ cont Apple Developer (99 USD/an) pentru semnare și notarizare; certificat de se
 - 2026-11-11: Distribuire has "Cartonașe, afiș și abțibilduri" (PDF from the server, page shown in the window, `save_file` saves to Downloads and opens it). Cont has the plan: what it includes, usage, renewal, other plans with "Cere acest plan" (no online payment yet). New Rust: `save_file` (base64 crate).
 - 2026-11-11: plan change popup (Upgrade/Downgrade switch, Lunar / 3 luni / Anual, paid-until date, applied at once) in Cont; locked mode for plans below Activ (only the Cont page). "Retușează" → "Editează"; Setări › "Editorul tău": system default, Lightroom Classic, Capture One, Photoshop or any program (`editors.rs`: detection in the usual folders, else a file picker); `retouch_start` opens the exported originals in it, so one app replaces the separate hsk. editor. Rust uncompiled.
 - 2026-11-11: `cargo check` and `cargo test --lib` (Docker rust:1-bookworm, Linux) pass: 14 tests, no warnings. One fix: the expected date in `inbox::days_are_formatted` was wrong (the code was right). Not yet built for macOS/Windows, not committed or tagged.
+
+## Selecție (2026-11-23)
+
+- `src-tauri/src/cull.rs`: the card is measured on every core. RAW → the camera's biggest embedded JPEG (no RAW decoder), turned by the RAW's EXIF; sharpness = variance of the Laplacian, mean of the 3 sharpest tiles of a 6×6 grid, curve `1 - e^(-v/160)`; clipping = share ≥250 or ≤4; dHash; time from EXIF (SubSec when present, else the date text in the first 256 KB, else mtime). Bursts: < 1.5 s apart and dHash distance ≤ 14. A 1600 px preview per frame goes to the app cache (`cull/`), cleared at the next scan.
+- Commands: `cull_scan` (emits `cull-progress`), `cull_preview`, `cull_apply` (moves dropped frames with their .xmp/JPEG twin into `Respinse/`, nothing deleted), `cull_style_get` / `cull_style_set` (`cull-style.json` in the config dir).
+- `ui/cull-eyes.js`: faces and closed eyes with MediaPipe Face Landmarker (vendored in `ui/vendor/mediapipe`, Apache-2.0, ~18 MB). Needs `'wasm-unsafe-eval'` in script-src and `'self'` in connect-src (tauri.conf.json). Faces < 6% of the width are skipped; closed = both eyeBlink > 0.6. Tested in Chromium with the same CSP on the demo photos (~250 ms per frame).
+- `ui/cull.js`: learning = logistic model over [sharp, blink, clip, burst, best-of-burst, faces, sharp²], trained in the window after every "Aplică" on the last 4,000 decisions; decides alone after ≥ 5 albums when the last two matched ≥ 90%; then only frames at 35–65% are shown.
+- `ui/tour.js`: tours are now `TOURS.app` (with a Selecție step) and `TOURS.cull` (runs once after the first card; the P/X step lets those keys through).
+- **Not compiled.** `cargo test --lib` (6 new tests in cull.rs) must run in Docker before the next tag.
+
+## Tema (2026-11-23)
+- Dark is the default theme (`theme.js`, `core.js`, `prefs.js`); light and "Ca sistemul" stay in Setări.
+- Dark palette greyed out (variant B): bg #111310, raise #1c1f1a, side glass rgba(62,70,57,.72), sage #66745e, moss #dfe3d8, sel rgba(102,116,94,.3); sidebar glow `saturate(.5) brightness(.85)` in dark only. Light theme unchanged. Not compiled.
+
+## Installerele (2026-11-23, not compiled)
+- **Windows: `setup/`** is "hsk. studio Setup", a small Tauri app with our own window (dark, 3 steps: Bun venit → Instalare → Gata; folder, desktop shortcut, start with Windows). It carries Tauri's NSIS installer (`setup/src-tauri/payload/setup-nsis.exe`, copied by the workflow) and runs it silently (`/S /D=<folder>`). Then it creates or removes the desktop shortcut (`mslnk`) and writes or deletes `HKCU\…\Run\hsk. studio = "<exe>" --hidden` (meant to match tauri-plugin-autostart; check on a real PC that the app's switch shows it). Its version comes from the root `package.json`. The UI was tested in Chromium with a mocked `__TAURI__`.
+- The NSIS installer keeps dark hsk. images (`src-tauri/installer/nsis-*.bmp`); people see them only in the uninstaller or when running it directly.
+- **macOS:** one universal `.dmg` (`--target universal-apple-darwin`) with a dark background (`src-tauri/installer/dmg-background.png`, app at 180,170 and Applications at 480,170).
+- Workflow: the Windows job builds the main app, then `setup/` with `--no-bundle`, and uploads `hsk-studio-setup-<version>.exe` to the same draft release (`gh release upload`).
+- To check on the first real build: the size of the setup, NSIS silent mode creating its own desktop shortcut, SmartScreen (no signing yet).

@@ -1,6 +1,6 @@
 [package]
 name = "hsk-studio-setup"
-version = "0.4.3"
+version = "0.4.4"
 description = "hsk. studio: instalarea pe Windows, în fereastra hsk."
 edition = "2021"
 rust-version = "1.77"

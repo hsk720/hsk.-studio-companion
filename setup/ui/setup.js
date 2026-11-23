@@ -5,7 +5,7 @@ const invoke = (cmd, args) => T.core.invoke(cmd, args);
 const win = T.window.getCurrentWindow();
 const $ = s => document.querySelector(s);
 const ORDER = ['files', 'install', 'shortcuts'];
-let dir = '', exe = '', busy = false;
+let dir = '', exe = '', busy = false, auto = false;
 
 function step(n) { // 1, 2, 3
   ['#p1', '#p2', '#p3'].forEach((id, i) => { $(id).hidden = i !== n - 1; });
@@ -33,11 +33,16 @@ async function start() {
   $('#err').hidden = true; $('#retry').hidden = true;
   $('#p2-title').textContent = 'Se instalează…';
   $('#p2-lead').hidden = false; $('.tips').hidden = false;
+  if (auto) $('#p2-title').textContent = 'Se actualizează…';
   step(2);
   progress({ step: 'files', percent: 0 });
   try {
     exe = await invoke('install', { dir, desktop: $('#desktop').checked, autostart: $('#autostart').checked });
     busy = false; $('#close').disabled = false;
+    if (auto) { // the app updated itself: open it again and go
+      try { await invoke('launch', { exe }); } catch { /* the Start menu still has it */ }
+      return setTimeout(() => win.close(), 600);
+    }
     setTimeout(() => { step(3); $('#done').focus(); }, 400);
   } catch (e) {
     busy = false; $('#close').disabled = false;
@@ -54,10 +59,17 @@ async function init() {
   dir = info.dir;
   $('#dir').textContent = dir; $('#dir').title = dir;
   $('#version').textContent = `Versiunea ${info.version} · hsk.photos`;
+  $('#desktop').checked = info.desktop; $('#autostart').checked = info.autostart;
   if (info.update) {
     $('#p1-title').textContent = 'Actualizează hsk. studio';
     $('#go').textContent = 'Actualizează';
     $('#p3-title').textContent = 'Gata, hsk. studio e actualizat';
+  }
+  if (info.auto) { // started by the app: the app is closing, give it a moment, then install with the same choices
+    auto = true;
+    $('#p2-lead').textContent = 'hsk. studio se actualizează și se redeschide singur.';
+    step(2); $('#p2-title').textContent = 'Se actualizează…';
+    return setTimeout(start, 1500);
   }
   $('#go').focus();
 }

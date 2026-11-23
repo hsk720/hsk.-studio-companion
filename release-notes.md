@@ -1,0 +1,8 @@
+- Actualizare direct din aplicație: butonul apare sus, lângă căutare
+- Totul se schimbă instant: ascunderea, notele, notițele, numele albumului
+- Ștergerea pozelor are „Anulează” 15 secunde
+- Mișcare lină între pagini, file, poze și ferestre; derulare lină cu rotița și tastatura
+- Ctrl + R reîmprospătează doar pagina deschisă
+- Filele se pot muta cu mouse-ul
+- Poza editată se înlocuiește în album în câteva secunde
+- Reparat: marginea de sus care tăia partea de jos a ferestrei

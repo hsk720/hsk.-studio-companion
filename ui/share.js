@@ -121,26 +121,33 @@ function noteItem(n) {
 }
 
 async function delNote(n) {
-  if (await guard(() => api('DELETE', `/api/albums/${S.code}/manage/notes/${n.id}`))) { await reloadAlbum(); refreshAttention(); }
+  if (await instant(a => { a.notes = (a.notes || []).filter(x => x.id !== n.id); },
+    () => api('DELETE', `/api/albums/${S.code}/manage/notes/${n.id}`).then(() => true))) refreshAttention();
 }
 async function noteDone(n) {
-  if (await guard(() => api('PATCH', `/api/albums/${S.code}/manage/notes/${n.id}`, { done: !n.done_at }))) { await reloadAlbum(); refreshAttention(); }
+  const done = !n.done_at;
+  if (await instant(a => { const x = (a.notes || []).find(y => y.id === n.id); if (x) x.done_at = done ? Math.floor(Date.now() / 1000) : null; },
+    () => api('PATCH', `/api/albums/${S.code}/manage/notes/${n.id}`, { done }).then(() => true))) refreshAttention();
 }
 
 async function addNote() {
   const area = el('textarea', { class: 'field', rows: 4, maxLength: 1000, placeholder: 'Ce ți-a cerut mireasa la telefon…' });
   const ok = await modal({ title: 'Notiță pentru tine', body: area, actions: [{ label: 'Renunț', value: false }, { label: 'Salvează', value: 'ok', primary: true }] });
-  if (ok === 'ok' && area.value.trim() && await guard(() => api('POST', `/api/albums/${S.code}/manage/notes`, { body: area.value.trim() }))) reloadAlbum();
+  const text = area.value.trim();
+  if (ok !== 'ok' || !text) return;
+  instant(a => { a.notes = [{ id: `new-${Date.now()}`, body: text, author: 'photographer', at: Math.floor(Date.now() / 1000), done_at: null }, ...(a.notes || [])]; },
+    () => api('POST', `/api/albums/${S.code}/manage/notes`, { body: text }).then(() => true));
 }
 
 async function resolveReport(id, action) {
-  if (await guard(() => api('POST', `/api/albums/${S.code}/reports/${id}`, { action }))) { await reloadAlbum(); refreshAttention(); }
+  if (await instant(a => { const r = (a.reports || []).find(x => x.id === id); if (r) r.status = 'resolved'; },
+    () => api('POST', `/api/albums/${S.code}/reports/${id}`, { action }).then(() => true))) refreshAttention();
 }
 
 async function editPref(key, title, hint) {
   const v = await promptBox(title, hint, S.album.prefs[key] || '');
   if (v === null) return;
-  if (await guard(() => api('PUT', `/api/albums/${S.code}/prefs`, { [key]: v }))) reloadAlbum();
+  instant(a => { a.prefs = { ...(a.prefs || {}), [key]: v }; }, () => api('PUT', `/api/albums/${S.code}/prefs`, { [key]: v }).then(() => true));
 }
 
 /** All the originals, under their own names, into a folder in Documents. */

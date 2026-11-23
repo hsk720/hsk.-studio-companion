@@ -14,6 +14,7 @@ mod retouch;
 mod tray;
 mod uploader;
 mod watcher;
+mod updater;
 mod xmp;
 
 use config::{Ledger, Mode, Settings};
@@ -644,6 +645,8 @@ pub fn run() {
             cull_apply,
             cull_style_get,
             cull_style_set,
+            updater::update_check,
+            updater::update_install,
         ])
         .run(tauri::generate_context!())
         .expect("hsk. studio could not start");

@@ -15,10 +15,15 @@ pub struct Watch {
 }
 
 pub fn start<F: Fn(PathBuf) + Send + 'static>(folder: &Path, on_photo: F) -> Result<Watch, String> {
+    start_with(folder, DEBOUNCE, on_photo)
+}
+
+/// The same, with a shorter wait: the retouch folder, where one save is one file and the photographer is waiting.
+pub fn start_with<F: Fn(PathBuf) + Send + 'static>(folder: &Path, debounce: Duration, on_photo: F) -> Result<Watch, String> {
     if !folder.is_dir() {
         return Err("Folderul nu mai există. Alege-l din nou.".into());
     }
-    let mut debouncer = new_debouncer(DEBOUNCE, None, move |res: DebounceEventResult| {
+    let mut debouncer = new_debouncer(debounce, None, move |res: DebounceEventResult| {
         let Ok(events) = res else { return };
         for event in events {
             if !matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {

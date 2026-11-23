@@ -6,3 +6,4 @@ setup/src-tauri/gen/
 setup/src-tauri/payload/
 graphify-out/
 .graphifyignore
+src-tauri/target-win/

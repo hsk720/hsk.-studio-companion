@@ -13,21 +13,27 @@ function renderSettings() {
     recog: !!(a.declaration && a.declaration.recognition), minors: !!a.minors, parents: !!(a.declaration && a.declaration.parents) };
   const saveTitle = later(async () => {
     if (!f.name.trim()) return;
-    if (await guard(() => api('PUT', `/api/albums/${S.code}/title`, { name: f.name.trim(), subtitle: f.sub.trim(), subtitle_icon: f.icon }))) {
-      Object.assign(a, { name: f.name.trim(), subtitle: f.sub.trim(), subtitle_icon: f.icon });
-      drawAlbumHead(); loadAlbums();
-    }
+    if (!await guard(() => api('PUT', `/api/albums/${S.code}/title`, { name: f.name.trim(), subtitle: f.sub.trim(), subtitle_icon: f.icon }))) reloadAlbum();
   });
+  /** The name, the line under it and the icon change on screen while typing; the server gets them when the typing stops. */
+  const showTitle = () => {
+    const nm = f.name.trim() || a.name;
+    Object.assign(a, { name: nm, subtitle: f.sub.trim(), subtitle_icon: f.icon });
+    drawAlbumHead();
+    const row = S.albums.find(x => x.code === S.code), t = activeTab();
+    if (row && row.name !== nm) { row.name = nm; renderSide(); }
+    if (t && t.title !== nm) { t.title = nm; renderTabs(); }
+  };
   const saveAccess = async () => {
     const r = await guard(() => api('PUT', `/api/albums/${S.code}/settings`, { access_mode: f.mode, minors: f.mode !== 'all' && f.minors,
       declare_photos: true, declare_recognition: f.recog, declare_parents: f.parents }));
     if (r) Object.assign(a, { access_mode: f.mode, minors: f.mode !== 'all' && f.minors });
   };
-  const name = el('input', { class: 'field', value: f.name, maxLength: 80, oninput: () => { f.name = name.value; saveTitle(); }, onblur: () => saveTitle.now() });
-  const sub = el('input', { class: 'field', value: f.sub, maxLength: 90, placeholder: 'Școala, locul sau sala', oninput: () => { f.sub = sub.value; saveTitle(); }, onblur: () => saveTitle.now() });
+  const name = el('input', { class: 'field', value: f.name, maxLength: 80, oninput: () => { f.name = name.value; showTitle(); saveTitle(); }, onblur: () => saveTitle.now() });
+  const sub = el('input', { class: 'field', value: f.sub, maxLength: 90, placeholder: 'Școala, locul sau sala', oninput: () => { f.sub = sub.value; showTitle(); saveTitle(); }, onblur: () => saveTitle.now() });
   const iconPick = el('div', { class: 'icon-pick', role: 'radiogroup', 'aria-label': 'Iconița de lângă rând' }, SUB_ICONS.map(([v, label]) => el('button', { type: 'button', role: 'radio', title: label,
     class: `ic${f.icon === v ? ' on' : ''}`, 'aria-checked': String(f.icon === v), 'aria-label': label,
-    onclick: e => { f.icon = v; $$('.ic', iconPick).forEach(b => { b.classList.remove('on'); b.setAttribute('aria-checked', 'false'); }); e.currentTarget.classList.add('on'); e.currentTarget.setAttribute('aria-checked', 'true'); saveTitle.now(); } },
+    onclick: e => { f.icon = v; showTitle(); $$('.ic', iconPick).forEach(b => { b.classList.remove('on'); b.setAttribute('aria-checked', 'false'); }); e.currentTarget.classList.add('on'); e.currentTarget.setAttribute('aria-checked', 'true'); saveTitle.now(); } },
   v ? ico(v) : el('span', {}, '–'))));
 
   const parentsRow = toggle('Am acordul scris al părinților', null, f.parents, v => { f.parents = v; saveAccess(); });

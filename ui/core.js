@@ -72,7 +72,12 @@ const THEMES = [['system', 'Ca sistemul'], ['light', 'Luminoasă'], ['dark', 'Î
 const themeQuery = matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
   const pick = ui.get('theme', 'dark');
-  document.documentElement.dataset.theme = pick === 'light' || pick === 'dark' ? pick : (themeQuery.matches ? 'dark' : 'light');
+  const next = pick === 'light' || pick === 'dark' ? pick : (themeQuery.matches ? 'dark' : 'light');
+  const root = document.documentElement;
+  if (root.dataset.theme === next) return;
+  const change = () => { root.dataset.theme = next; };
+  if (root.dataset.theme && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(change);
+  else change();
 }
 themeQuery.addEventListener('change', applyTheme);
 applyTheme();
@@ -80,7 +85,13 @@ applyTheme();
 function toast(message, kind = 'info') {
   const t = el('p', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status' }, String(message));
   $('#toasts').append(t);
-  setTimeout(() => t.remove(), kind === 'error' ? 8000 : 4000);
+  setTimeout(() => dismissToast(t), kind === 'error' ? 8000 : 4000);
+}
+/** A toast leaves the way it came. */
+function dismissToast(t) {
+  if (!t || !t.isConnected) return;
+  t.classList.add('out');
+  setTimeout(() => t.remove(), 170);
 }
 
 /** Runs an action and tells the photographer what went wrong in the server's own words. */
@@ -101,7 +112,28 @@ function segmented(options, value, onchange, label = '') {
     } }, o.icon ? ico(o.icon) : null, el('span', {}, o.label)));
   }
   wrap.dataset.value = String(value); draw(value);
+  slidePill(wrap);
   return wrap;
+}
+
+/** The light-sage pill of a switch glides to the chosen option (not for chips, which wrap on several rows). */
+function slidePill(wrap) {
+  const pill = el('span', { class: 'seg-pill', 'aria-hidden': 'true' });
+  wrap.prepend(pill);
+  const place = animate => {
+    if (wrap.classList.contains('chips')) { pill.remove(); wrap.classList.remove('has-pill'); return; }
+    const on = wrap.querySelector('.seg-b.on');
+    if (!on || !on.offsetWidth) return;
+    wrap.classList.add('has-pill');
+    if (!animate) pill.style.transition = 'none';
+    pill.style.width = `${on.offsetWidth}px`;
+    pill.style.transform = `translateX(${on.offsetLeft}px)`;
+    if (!animate) requestAnimationFrame(() => { pill.style.transition = ''; });
+  };
+  // first placement once the switch is on screen, without motion; afterwards every choice glides
+  const seen = new ResizeObserver(() => { if (wrap.isConnected) place(false); });
+  seen.observe(wrap);
+  wrap.addEventListener('click', () => requestAnimationFrame(() => place(true)));
 }
 
 /** An on/off switch with its label and an explanation under it. */
@@ -152,9 +184,18 @@ async function promptBox(title, label, value = '', ok = 'Salvează') {
   return (await done) === 'ok' ? input.value.trim() : null;
 }
 
-const copyText = async text => {
-  try { await navigator.clipboard.writeText(text); toast('Copiat.', 'success'); }
-  catch { toast('Nu am putut copia. Selectează textul și copiază-l.', 'error'); }
+const copyText = async (text, button = document.activeElement) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    const b = button && button.tagName === 'BUTTON' ? button : null;
+    if (!b) return toast('Copiat.', 'success');
+    if (b.dataset.copied) return;
+    const was = [...b.childNodes];
+    b.dataset.copied = '1';
+    b.classList.add('copied');
+    b.replaceChildren(ico('check'), ...(b.textContent.trim() ? [el('span', {}, 'Copiat')] : []));
+    setTimeout(() => { b.replaceChildren(...was); b.classList.remove('copied'); delete b.dataset.copied; }, 1500);
+  } catch { toast('Nu am putut copia. Selectează textul și copiază-l.', 'error'); }
 };
 
 const siteOpen = path => guard(() => invoke('site_open', { path }));

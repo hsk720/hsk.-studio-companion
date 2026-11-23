@@ -112,8 +112,52 @@ listen('retouch-file', e => {
   retouchNote = f.state === 'sending' ? `Se trimite ${f.name}…` : f.state === 'done' ? `${f.name}: poza din album a fost înlocuită.` : `${f.name}: ${f.message}`;
   drawDock(lastQueue);
   if (f.state === 'failed') setAttention('retouch', [{ id: `rt:${f.name}`, level: 'warn', icon: 'alert', title: `Retușul „${f.name}” nu s-a trimis`, text: f.message, dismissible: true }]);
-  if (f.state === 'done') { ATT.delete('retouch'); const t = activeTab(); if (t && t.kind === 'album' && S.tab === 'photos' && $('#viewer').hidden) reloadAlbum(); }
+  markRetouch(f.id, f.state === 'sending');
+  if (f.state === 'done') { ATT.delete('retouch'); swapPhoto(f.album, f.photo); }
 });
+
+/** A tile whose new version is on its way gets a quiet "se trimite" badge. */
+function markRetouch(id, on) {
+  const tileEl = $(`#grid .tile[data-id="${CSS.escape(id || '')}"]`);
+  if (!tileEl) return;
+  tileEl.querySelector('.badge.sending')?.remove();
+  if (on) tileEl.append(el('span', { class: 'badge soft sending' }, 'se trimite'));
+}
+
+/** The edited photo, swapped in where it is shown (grid tile, viewer), without reloading the album. */
+function swapPhoto(code, photo) {
+  if (!photo || !photo.id) {
+    const t = activeTab();
+    if (t && t.kind === 'album' && t.code === code && S.tab === 'photos' && $('#viewer').hidden) reloadAlbum();
+    return;
+  }
+  for (const t of S.tabs) {
+    if (t.kind !== 'album' || t.code !== code || !t.album || !t.album.photos) continue;
+    const i = t.album.photos.findIndex(p => p.id === photo.id);
+    if (i >= 0) t.album.photos[i] = { ...t.album.photos[i], ...photo };
+  }
+  if (S.album && S.code === code && S.album.photos) {
+    const i = S.album.photos.findIndex(p => p.id === photo.id);
+    if (i >= 0) S.album.photos[i] = { ...S.album.photos[i], ...photo };
+  }
+  const img = $(`#grid .tile[data-id="${CSS.escape(photo.id)}"] img:not(.ghost)`);
+  if (img && photo.thumb) {
+    const next = new Image();
+    next.src = abs(photo.thumb);
+    next.decode().catch(() => {}).then(() => {
+      const ghost = el('img', { class: 'ghost', src: img.src, alt: '' }); // the old picture, on top, fading away
+      img.after(ghost);
+      img.src = next.src;
+      requestAnimationFrame(() => requestAnimationFrame(() => { ghost.style.opacity = '0'; }));
+      setTimeout(() => ghost.remove(), 300);
+    });
+  }
+  const k = vw.list.findIndex(p => p.id === photo.id);
+  if (k >= 0) {
+    vw.list[k] = { ...vw.list[k], ...photo };
+    if (!$('#viewer').hidden && k === vw.i) vwRender();
+  }
+}
 listen('export-progress', e => {
   const [done, total] = e.payload;
   retouchNote = done < total ? `Se descarcă originalele: ${nf.format(done)} din ${nf.format(total)}` : '';

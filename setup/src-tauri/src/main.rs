@@ -14,8 +14,12 @@ const APP_NAME: &str = "hsk. studio";
 struct Info {
     dir: String,
     version: String,
-    /// hsk. studio is already in the usual folder: the window says "update" instead of "install"
+    /// hsk. studio is already in the folder: the window says "update" instead of "install"
     update: bool,
+    /// started by the app itself (--update): install at once, keep the choices made before, reopen the app
+    auto: bool,
+    desktop: bool,
+    autostart: bool,
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -39,10 +43,40 @@ fn main_exe(dir: &Path) -> Option<PathBuf> {
     })
 }
 
+/// `--dir <folder>` given by the app when it updates itself; otherwise the usual folder.
+fn chosen_dir() -> PathBuf {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter().position(|a| a == "--dir").and_then(|i| args.get(i + 1)).map(PathBuf::from).unwrap_or_else(default_dir)
+}
+
+fn desktop_link() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join("Desktop").join(format!("{APP_NAME}.lnk")))
+}
+
+#[cfg(windows)]
+fn starts_with_windows() -> bool {
+    winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Run")
+        .and_then(|k| k.get_value::<String, _>(APP_NAME))
+        .is_ok()
+}
+#[cfg(not(windows))]
+fn starts_with_windows() -> bool {
+    false
+}
+
 #[tauri::command]
 fn info(app: AppHandle) -> Info {
-    let dir = default_dir();
-    Info { update: main_exe(&dir).is_some(), dir: dir.to_string_lossy().into(), version: app.package_info().version.to_string() }
+    let dir = chosen_dir();
+    let update = main_exe(&dir).is_some();
+    Info {
+        update,
+        dir: dir.to_string_lossy().into(),
+        version: app.package_info().version.to_string(),
+        auto: std::env::args().any(|a| a == "--update"),
+        desktop: !update || desktop_link().is_some_and(|l| l.exists()),
+        autostart: update && starts_with_windows(),
+    }
 }
 
 /// A folder chosen in the picker: the app goes into its own "hsk. studio" folder inside it.
@@ -100,8 +134,7 @@ fn run_install(app: &AppHandle, dir: &Path, desktop: bool, autostart: bool) -> R
     let exe = main_exe(dir).ok_or("Instalarea s-a terminat, dar nu găsesc aplicația în folder.")?;
 
     say(app, "shortcuts", 92);
-    let link = std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join("Desktop").join(format!("{APP_NAME}.lnk")));
-    if let Some(link) = link {
+    if let Some(link) = desktop_link() {
         if desktop {
             if !link.exists() {
                 if let Ok(l) = mslnk::ShellLink::new(&exe) {

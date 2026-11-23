@@ -266,7 +266,7 @@ function cullOneByOne() {
     else return;
     e.preventDefault();
   };
-  requestAnimationFrame(() => { const s = $('.stile.on'); if (s) s.scrollIntoView({ inline: 'center', block: 'nearest' }); });
+  requestAnimationFrame(() => { const s = $('.stile.on'); glideTo(s, { inline: 'center' }); });
   return el('div', { class: 'cull-body' }, cullStyleNote(), body);
 }
 let cullKeys = null;

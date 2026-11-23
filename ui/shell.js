@@ -36,6 +36,7 @@ async function applyAuth(auth) {
   $('#code').value = '';
   gate('app');
   buildChrome();
+  checkUpdateOnce();
   applyLock();
   if (!S.locked) await enterApp();
 }
@@ -118,6 +119,29 @@ function drawNav() {
   $('#nav').replaceChildren(...items.map(([id, icon, label, badge]) => el('button', { type: 'button', class: `nav-btn${S.active === id ? ' on' : ''}`, title: label, dataset: { go: id },
     onclick: () => openTab(id) }, ico(icon), el('span', { class: 'lbl' }, label),
     badge && badge.n ? el('em', { class: 'badge-n' }, String(badge.n)) : null, badge && badge.dot ? el('i', { class: 'dot busy' }) : null)));
+  placeNavPill();
+}
+
+/** The highlight behind the current page glides from where it was to where it is now. */
+let navPillAt = null;
+function placeNavPill() {
+  const nav = $('#nav'), on = $('.nav-btn.on', nav);
+  if (!on) { nav.classList.remove('has-pill'); navPillAt = null; return; }
+  const pill = el('span', { class: 'nav-pill', 'aria-hidden': 'true' });
+  nav.classList.add('has-pill');
+  nav.prepend(pill);
+  const to = { y: on.offsetTop, h: on.offsetHeight };
+  const from = navPillAt || to;
+  pill.style.transition = 'none';
+  pill.style.height = `${from.h}px`;
+  pill.style.transform = `translateY(${from.y}px)`;
+  navPillAt = to;
+  if (from.y === to.y && from.h === to.h) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    pill.style.transition = '';
+    pill.style.height = `${to.h}px`;
+    pill.style.transform = `translateY(${to.y}px)`;
+  }));
 }
 
 // ---- the album list ----
@@ -159,6 +183,7 @@ async function openDemo() {
   if (d) { renderSide(); openAlbum(d.code); }
 }
 
+let openGroup = null; // the album whose pages are unfolded in the sidebar
 function renderSide() {
   const q = ($('#album-search').value || '').trim().toLowerCase();
   const list = [...(S.demo && !ui.get('hideDemo', false) ? [S.demo] : []), ...S.albums].filter(a => !q || a.name.toLowerCase().includes(q));
@@ -167,17 +192,19 @@ function renderSide() {
     thumb.addEventListener('error', () => thumb.replaceWith(el('span', { class: 'ph' })), { once: true });
     const on = S.active === `album:${a.code}`;
     const item = el('button', { type: 'button', class: `al-item${on ? ' on' : ''}${a.demo ? ' demo' : ''}`, dataset: { code: a.code }, title: a.name,
-      onclick: e => openAlbum(a.code, undefined, e.metaKey || e.ctrlKey) },
+      onclick: e => openAlbum(a.code, undefined, e.metaKey || e.ctrlKey), onpointerenter: () => prefetchAlbum(a.code) },
     thumb, el('span', { class: 'lbl' }, el('b', {}, a.name), el('small', {}, a.demo ? el('em', { class: 'demo-tag' }, 'Demo') : null, [plural(a.photos, 'poză', 'poze'), fmtDay(a.event_date)].filter(Boolean).join(' · '))));
     if (!on) return el('div', { class: 'al-group' }, item);
+    const unfold = openGroup !== a.code;
+    openGroup = a.code;
     const hot = albumAttention(a.code);
-    return el('div', { class: 'al-group open' }, item, el('div', { class: 'al-subs', role: 'group', 'aria-label': `Paginile albumului ${a.name}` },
+    return el('div', { class: `al-group open${unfold ? ' m-unfold' : ''}` }, item, el('div', { class: 'al-subs', role: 'group', 'aria-label': `Paginile albumului ${a.name}` },
       INNER_TABS.map(([id, icon, label]) => el('button', { type: 'button', class: `al-sub${S.tab === id ? ' on' : ''}`, dataset: { tab: id }, 'aria-current': S.tab === id ? 'page' : null,
         onclick: () => openAlbum(a.code, id) }, ico(icon), el('span', { class: 'grow' }, label), id === 'share' && hot ? el('em', { class: 'badge-n' }, String(hot)) : null))));
   }));
   if (!list.length) $('#albums').replaceChildren(el('p', { class: 'muted pad-s lbl' }, S.albums.length ? 'Niciun album cu acest nume.' : 'Nu ai încă niciun album.'));
 }
-$('#album-search').addEventListener('input', renderSide);
+$('#album-search').addEventListener('input', () => flip(() => $('#albums'), '.al-item', 'code', renderSide));
 
 // ---- workspace tabs ----
 const tabById = id => S.tabs.find(t => t.id === id);
@@ -225,8 +252,19 @@ function activate(id) {
 function closeTab(id) {
   const i = S.tabs.findIndex(t => t.id === id);
   if (i < 1) return; // the dashboard stays
+  const node = $(`#tabstrip .tab[data-id="${CSS.escape(id)}"]`);
+  if (node && !calm() && !node.classList.contains('m-tab-out')) { // the tab folds first
+    node.classList.add('m-tab-out');
+    return setTimeout(() => closeTabNow(id), 150);
+  }
+  closeTabNow(id);
+}
+function closeTabNow(id) {
+  const i = S.tabs.findIndex(t => t.id === id);
+  if (i < 1) return;
   const wasActive = S.active === id;
   S.tabs.splice(i, 1);
+  tabsSeen.delete(id);
   persistTabs();
   if (wasActive) { S.active = ''; activate((S.tabs[i] || S.tabs[i - 1]).id); } else renderTabs();
 }
@@ -247,7 +285,10 @@ function restoreTabs() {
 
 function albumTab(code) {
   const a = S.albums.find(x => x.code === code);
-  return { id: `album:${code}`, kind: 'album', code, title: a ? a.name : code, inner: 'photos' };
+  const c = albumCache.get(code); // fetched when the pointer went over it: the tab opens already drawn
+  albumCache.delete(code);
+  return { id: `album:${code}`, kind: 'album', code, title: a ? a.name : code, inner: 'photos',
+    ...(c && c.album ? { album: c.album, fetched: c.at } : {}) };
 }
 
 /** Opens an album in its tab, or focuses the tab it already has. Ctrl-click opens it behind the current one. */
@@ -260,6 +301,7 @@ function openAlbum(code, inner, background = false) {
   openTab(id, { background });
 }
 
+const tabsSeen = new Set();
 function renderTabs() {
   $('#tabstrip').replaceChildren(...S.tabs.map(t => {
     const icon = { home: 'home', album: 'image', watch: 'folder', prefs: 'settings', account: 'user', catalog: 'layers', cull: 'wand', finance: 'chart' }[t.kind];
@@ -269,9 +311,15 @@ function renderTabs() {
         ico(icon), el('span', {}, t.title), badge ? el('em', { class: 'badge-n' }, String(badge)) : null),
       t.kind === 'home' ? null : el('button', { type: 'button', class: 'tab-x', 'aria-label': `Închide ${t.title}`, onclick: () => closeTab(t.id) }, ico('x')));
   }));
+  // a tab seen for the first time grows in (not the ones restored at start)
+  for (const node of $$('#tabstrip .tab')) {
+    const id = node.dataset.id;
+    if (!tabsSeen.has(id)) { if (tabsSeen.size) node.classList.add('m-tab-in'); tabsSeen.add(id); }
+  }
+  bindTabDrag();
   drawNav();
   renderSide();
-  const on = $('.tab.on'); if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  glideTo($('.tab.on'));
   ui.set('active', S.active);
 }
 
@@ -289,36 +337,79 @@ function render() {
   else if (t.kind === 'finance') renderFinance();
   else if (t.kind === 'album') {
     stage.replaceChildren(el('div', { class: 'album-pane' }, el('header', { id: 'al-head' }), el('div', { id: 'al-demo', class: 'demo-note', hidden: true }), el('div', { id: 'tab-body' })));
+    lastInner = S.tab; // a new tab comes in as a page, not as a sideways step
     if (S.album) renderAlbum();
-    else $('#tab-body').replaceChildren(el('p', { class: 'muted pad' }, 'Se încarcă albumul…'));
+    else $('#tab-body').replaceChildren(skeletonGrid(Math.min(48, (S.albums.find(a => a.code === S.code) || {}).photos || 24)));
   }
+  if (!quietRender) enter(stage.firstElementChild);
 }
+let quietRender = false; // Ctrl+R redraws the page where it is, without the entrance
 
 // ---- one album ----
-const fetchAlbum = code => api('GET', `/api/albums/${code}/manage`);
+const fetchAlbum = code => api('GET', `/api/albums/${code}/manage`).then(a => dropPending(code, a));
 
 async function refreshAlbum(t) {
   const album = await guard(() => fetchAlbum(t.code));
   if (!album) { if (!t.album && S.active === t.id) $('#tab-body') && $('#tab-body').replaceChildren(el('p', { class: 'muted pad' }, 'Albumul nu a putut fi încărcat. Poate a expirat sau a fost șters.')); return; }
+  const changed = !sameAlbum(album, t.album);
   t.album = album; t.fetched = Date.now(); t.title = album.name;
   S.stats[t.code] = album;
-  if (S.active === t.id) { S.album = album; renderAlbum(); }
-  renderTabs();
+  if (S.active === t.id && changed) { S.album = album; redrawAlbum(); }
+  if (changed) renderTabs();
 }
 
-/** After a change: fetch again and redraw without leaving the tab, keeping the scroll. */
+/** Whether a fresh copy of an album differs from the one on screen: an unchanged album is not drawn again. */
+const sameAlbum = (a, b) => { try { return !!b && JSON.stringify(a) === JSON.stringify(b); } catch { return false; } };
+
+/** Draws the album again where it was: same scroll, and an open viewer keeps its photo with the new data. */
+function redrawAlbum() {
+  const body = $('#tab-body'), top = body ? body.scrollTop : 0;
+  renderAlbum();
+  const b = $('#tab-body');
+  if (b) b.scrollTop = top;
+  if (!$('#viewer').hidden && S.album && S.album.photos) {
+    const byId = new Map(S.album.photos.map(p => [p.id, p]));
+    vw.list = vw.list.map(p => byId.get(p.id) || p);
+    vwRender();
+  }
+}
+
+/** After a change: fetch again in the background; the screen changes only if the server's copy differs. */
 async function reloadAlbum() {
-  const t = activeTab(), body = $('#tab-body'), top = body ? body.scrollTop : 0;
+  const t = activeTab();
   if (!t || t.kind !== 'album') return;
   const album = await guard(() => fetchAlbum(t.code));
   if (!album) return;
+  const changed = !sameAlbum(album, t.album);
   t.album = album; t.fetched = Date.now(); t.title = album.name; S.stats[t.code] = album;
   if (S.active !== t.id) return;
   S.album = album;
   const row = S.albums.find(a => a.code === t.code);
-  if (row) { row.photos = album.photo_count; row.name = album.name; renderSide(); }
-  renderAlbum();
-  if ($('#tab-body')) $('#tab-body').scrollTop = top;
+  if (row && (row.photos !== album.photo_count || row.name !== album.name)) { row.photos = album.photo_count; row.name = album.name; renderSide(); }
+  if (changed) redrawAlbum();
+}
+
+/** A change shown at once: `change` edits the album on screen, `send` tells the server. If the server refuses,
+ *  the album is fetched again (and the error shown); if it agrees, a quiet fetch brings what only it knows. */
+async function instant(change, send, { sync = true } = {}) {
+  if (S.album) change(S.album);
+  redrawAlbum();
+  const ok = await guard(send);
+  if (!ok) { await reloadAlbum(); return false; }
+  if (sync) reloadAlbum();
+  return true;
+}
+
+/** Hovering an album in the list fetches it, so the click opens it with nothing to wait for. */
+const albumCache = new Map(); // code → { album, at }
+function prefetchAlbum(code) {
+  const t = tabById(`album:${code}`);
+  const c = albumCache.get(code);
+  if ((t && t.album) || (c && (c.loading || Date.now() - c.at < 60000))) return;
+  albumCache.set(code, { loading: true, at: 0 });
+  api('GET', `/api/albums/${code}/manage`)
+    .then(album => albumCache.set(code, { album, at: Date.now() }))
+    .catch(() => albumCache.delete(code));
 }
 
 function drawAlbumHead() {
@@ -357,7 +448,13 @@ function renderAlbum() {
   drawDemoNote();
   renderSide();  // the album's pages live in the sidebar
   (INNER[S.tab] || INNER.photos)();
+  if (lastInner !== S.tab) { // Poze → Persoane → Distribuire → Setări album: the page comes from the side it lies on
+    const order = INNER_TABS.map(x => x[0]);
+    enter($('#tab-body'), Math.sign(order.indexOf(S.tab) - order.indexOf(lastInner)));
+    lastInner = S.tab;
+  }
 }
+let lastInner = null;
 
 // ---- a new album ----
 /** `from` (a folder the app noticed) pre-fills the form and sends its photos as soon as the album exists. */
@@ -465,3 +562,81 @@ addEventListener('keydown', e => {
   else if (mod && /^[1-9]$/.test(e.key)) { const t = S.tabs[Number(e.key) - 1]; if (t) { e.preventDefault(); activate(t.id); } }
   else if (e.key === '?' && !typing && !$('#dlg').open) shortcutsDialog();
 });
+
+
+// ---- tabs can be dragged into another order ----
+function bindTabDrag() {
+  const strip = $('#tabstrip');
+  if (strip.dataset.drag) return;
+  strip.dataset.drag = '1';
+  strip.addEventListener('pointerdown', e => {
+    const tab = e.target.closest('.tab');
+    if (!tab || e.button !== 0 || e.target.closest('.tab-x') || tab.dataset.id === 'home') return;
+    const startX = e.clientX, id = tab.dataset.id;
+    let dragging = false, order = null;
+    const move = ev => {
+      const dx = ev.clientX - startX;
+      if (!dragging && Math.abs(dx) < 6) return;
+      if (!dragging) { dragging = true; tab.classList.add('dragging'); tab.setPointerCapture(e.pointerId); }
+      tab.style.transform = `translateX(${dx}px)`;
+      const me = tab.getBoundingClientRect(), mid = me.left + me.width / 2;
+      const others = $$('.tab', strip).filter(n => n !== tab);
+      order = [];
+      let placed = false;
+      for (const n of others) {
+        const r = n.getBoundingClientRect();
+        if (!placed && n.dataset.id !== 'home' && mid < r.left + r.width / 2) { order.push(id); placed = true; }
+        order.push(n.dataset.id);
+      }
+      if (!placed) order.push(id);
+      // the others step aside to show where it will land
+      const at = order.indexOf(id), was = S.tabs.findIndex(t => t.id === id);
+      for (const n of others) {
+        const i = S.tabs.findIndex(t => t.id === n.dataset.id);
+        const shift = i > was && i <= at ? -me.width : i < was && i >= at ? me.width : 0;
+        n.classList.add('shift');
+        n.style.transform = shift ? `translateX(${shift}px)` : '';
+      }
+    };
+    const up = () => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      if (!dragging) return;
+      const finalOrder = order;
+      $$('.tab', strip).forEach(n => { n.classList.remove('shift', 'dragging'); n.style.transform = ''; });
+      if (finalOrder) {
+        S.tabs.sort((a, b) => finalOrder.indexOf(a.id) - finalOrder.indexOf(b.id));
+        persistTabs();
+        renderTabs();
+      }
+      // the click that ends a drag does not also open the tab
+      const stop = ev => ev.stopPropagation();
+      strip.addEventListener('click', stop, true);
+      setTimeout(() => strip.removeEventListener('click', stop, true), 60);
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+  });
+}
+
+// ---- Ctrl+R / F5 / Cmd+R: only the page you are on; Ctrl+Shift+R restarts the whole window ----
+async function refreshPage() {
+  const t = activeTab();
+  if (!t) return;
+  const icon = $('#tabstrip .tab.on .tab-main .icon');
+  if (icon) icon.classList.add('spin');
+  try {
+    if (t.kind === 'album') { await reloadAlbum(); if (S.tab !== 'photos') renderAlbum(); }
+    else if (t.kind === 'home') { await loadAlbums(); renderHome(); refreshAttention(); }
+    else { quietRender = true; try { render(); } finally { quietRender = false; } }
+  } finally {
+    setTimeout(() => { const i = $('#tabstrip .tab.on .tab-main .icon'); if (i) i.classList.remove('spin'); }, 300);
+  }
+}
+addEventListener('keydown', e => {
+  const r = (e.key === 'r' || e.key === 'R') && (e.ctrlKey || e.metaKey) && !e.altKey;
+  if (!(r || e.key === 'F5')) return;
+  if (e.shiftKey) { persistTabs(); return; } // the full restart, as before
+  e.preventDefault();
+  if (!$('#app').hidden) refreshPage();
+}, true);

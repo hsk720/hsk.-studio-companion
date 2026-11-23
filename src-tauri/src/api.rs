@@ -176,7 +176,8 @@ pub async fn download(http: &reqwest::Client, token: &str, path: &str, dest: &st
 }
 
 /// A new version of a photo that is already in the album (same place, same address).
-pub async fn replace(http: &reqwest::Client, token: &str, album: &str, photo: &str, body: Vec<u8>) -> Result<(), ApiError> {
+/// The new version of a photo; the server's answer carries the photo with its new addresses (`?v=`).
+pub async fn replace(http: &reqwest::Client, token: &str, album: &str, photo: &str, body: Vec<u8>) -> Result<Value, ApiError> {
     let sent = http
         .post(format!("{}/api/albums/{}/photos/{}/replace", base(), album, photo))
         .timeout(UPLOAD)
@@ -185,7 +186,7 @@ pub async fn replace(http: &reqwest::Client, token: &str, album: &str, photo: &s
         .body(body)
         .send()
         .await;
-    read::<Value>(sent).await.map(|_| ())
+    read::<Value>(sent).await
 }
 
 pub async fn upload(

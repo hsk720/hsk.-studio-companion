@@ -27,6 +27,12 @@
   const bus = {};
   const emit = (ev, payload) => (bus[ev] || []).forEach(fn => fn({ payload }));
   const cmds = {
+    // updates: nothing new, unless the page is opened with ?demo=update
+    update_check: async () => /[?&]demo=update\b/.test(location.search)
+      ? { available: true, current: '0.4.4', version: '0.4.5', notes: '- Selecția învață mai repede\n- Proiecția are bandă pentru parteneri', url: '', name: 'hsk-studio-setup-0.4.5.exe', size: 9900000, digest: null, page: '' }
+      : { available: false, current: '0.4.4', version: '0.4.4', notes: '', url: '', name: '', size: 0, digest: null, page: '' },
+    update_install: async () => { for (let d = 0; d <= 9900000; d += 1100000) { emit('update-progress', { done: d, total: 9900000 }); await new Promise(r => setTimeout(r, 120)); }
+      throw new Error('În previzualizare nu se instalează nimic: actualizarea merge doar în aplicația instalată.'); },
     auth_state: () => ({ connected: true, offline: false, account: { name: profile.name, plan: planDb.find(x => x.id === planNow).name, owner: false, avatar: profile.avatar, app_access: !location.search.includes('locked') } }),
     auth_start: () => null, auth_claim: only('Conectarea'), auth_sign_out: () => location.reload(),
     setup_get: () => setup,

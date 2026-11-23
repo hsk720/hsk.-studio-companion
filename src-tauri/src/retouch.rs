@@ -32,6 +32,10 @@ struct FileEvent {
     /// sending | done | failed
     state: &'static str,
     message: String,
+    album: String,
+    id: String,
+    /// done: the photo as the server now has it (new addresses), so the window swaps it in place at once
+    photo: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -102,7 +106,7 @@ pub async fn start(app: &AppHandle, album: String, album_name: String, photos: V
 
     let handle = app.clone();
     let album_code = album.clone();
-    let watch = watcher::start(&folder, move |path| {
+    let watch = watcher::start_with(&folder, Duration::from_millis(400), move |path| {
         let Some(id) = photo_id(&path) else { return };
         let Some(now) = stamp(&path) else { return };
         {
@@ -128,31 +132,31 @@ pub async fn start(app: &AppHandle, album: String, album_name: String, photos: V
 
 async fn send(app: &AppHandle, album: &str, id: &str, path: &Path) {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let tell = |state: &'static str, message: String| {
-        let _ = app.emit("retouch-file", FileEvent { name: name.clone(), state, message });
+    let tell = |state: &'static str, message: String, photo: Option<serde_json::Value>| {
+        let _ = app.emit("retouch-file", FileEvent { name: name.clone(), state, message, album: album.into(), id: id.into(), photo });
     };
-    tell("sending", String::new());
+    tell("sending", String::new(), None);
     // an export is finished when its size stops changing
     let mut last = 0;
-    for _ in 0..120 {
+    for _ in 0..240 {
         let size = tokio::fs::metadata(path).await.map(|m| m.len()).unwrap_or(0);
         if size > 0 && size == last {
             break;
         }
         last = size;
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
     let Ok(body) = tokio::fs::read(path).await else {
-        return tell("failed", "Fișierul nu a putut fi citit.".into());
+        return tell("failed", "Fișierul nu a putut fi citit.".into(), None);
     };
     let state = app.state::<AppState>();
-    let Some(token) = keyring::load() else { return tell("failed", "Aplicația nu este conectată.".into()) };
+    let Some(token) = keyring::load() else { return tell("failed", "Aplicația nu este conectată.".into(), None) };
     for attempt in 0..3 {
         match api::replace(&state.http, &token, album, id, body.clone()).await {
-            Ok(()) => return tell("done", String::new()),
-            Err(ApiError::Temporary(m)) if attempt == 2 => return tell("failed", m),
+            Ok(answer) => return tell("done", String::new(), answer.get("photo").cloned()),
+            Err(ApiError::Temporary(m)) if attempt == 2 => return tell("failed", m, None),
             Err(ApiError::Temporary(_)) => tokio::time::sleep(Duration::from_secs(5 * (attempt + 1))).await,
-            Err(ApiError::Unauthorized(m)) | Err(ApiError::Rejected(m)) => return tell("failed", m),
+            Err(ApiError::Unauthorized(m)) | Err(ApiError::Rejected(m)) => return tell("failed", m, None),
         }
     }
 }

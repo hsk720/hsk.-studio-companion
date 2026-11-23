@@ -23,6 +23,8 @@
 body { height: 100vh; background: var(--bg); color: var(--fg); font: 400 .875rem/1.5 "Inter", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; cursor: default; overflow: hidden; }
 [hidden] { display: none !important; }
+/* the icon sprite (sprite.js): its inline style is blocked by the app's CSP, so it is hidden here; otherwise it takes a 21 px line above the app */
+body > svg:first-child { position: absolute; width: 0; height: 0; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--moss); outline-offset: 2px; }
@@ -111,7 +113,7 @@ input:focus-visible + .switch { outline: 2px solid var(--moss); outline-offset: 
 
 /* frame: a sidebar that folds into a rail, and a work area that keeps all the room */
 #app { height: 100vh; display: grid; grid-template-columns: 264px minmax(0, 1fr); background: var(--bg); }
-#side { display: flex; flex-direction: column; gap: 10px; padding: 14px 10px 10px; position: relative; z-index: 2; background: var(--side-glass); -webkit-backdrop-filter: blur(30px) saturate(1.35); backdrop-filter: blur(30px) saturate(1.35); border-radius: 0 26px 26px 0;
+#side { display: flex; flex-direction: column; gap: 10px; padding: 14px 10px 10px; position: relative; z-index: 2; background: var(--side-glass); -webkit-backdrop-filter: blur(30px) saturate(1.35); backdrop-filter: blur(30px) saturate(1.35);
   --fg: #fff; --ink: 255 255 255; --moss: #e3e9d6; --on-moss: #1b1d17; --sel: rgba(255, 255, 255, .17); --soft: rgb(var(--ink) / .74); --line: rgb(var(--ink) / .18); --field: rgb(var(--ink) / .1); color: #fff; min-height: 0; overflow: hidden; }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 0 8px; min-height: 34px; }
 #new-album { width: 100%; }
@@ -511,3 +513,115 @@ button.drow:hover { background: var(--field); }
 .stile.ask { box-shadow: inset 0 -3px 0 var(--sage); }
 .stile.ask.on { box-shadow: 0 0 0 2px var(--sage), inset 0 -3px 0 var(--sage); }
 .cull-note-prog { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+
+/* updates: the button in the top bar and the dialog */
+.update-btn { display: inline-flex; align-items: center; gap: 7px; height: 32px; margin: 0 4px 6px 0; padding: 0 14px 0 11px; border: 0; border-radius: 10px; background: var(--moss); color: var(--on-moss); font-weight: 600; font-size: .8125rem; white-space: nowrap; }
+.update-btn:hover { background: var(--fg); color: var(--bg); }
+.upd-notes { display: grid; gap: 6px; margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); }
+.upd-notes ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: .8125rem; }
+.upd-progress { display: grid; gap: 6px; margin-top: 16px; }
+.upd-progress .bar { height: 6px; border-radius: 3px; background: var(--field); overflow: hidden; }
+.upd-progress .bar i { display: block; height: 100%; width: 0; background: var(--sage); border-radius: 3px; transition: width .2s; }
+.upd-msg { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgb(180 83 42 / .16); box-shadow: inset 0 0 0 1px rgb(180 83 42 / .4); font-size: .8125rem; }
+
+/* the lists and the album scroll from the GPU and do not pull the window when they reach their end */
+#stage, #tab-body, #albums, .dscroll, .dside, .queue, .palette-list, .faces, .picker, dialog { overscroll-behavior: contain; }
+#tab-body, #stage { will-change: scroll-position; }
+
+
+/* ---- motion (motion.js): three durations, one curve; "less motion" makes everything instant ---- */
+:root { --d1: 120ms; --d2: 200ms; --d3: 320ms; --ease: cubic-bezier(.16, 1, .3, 1); }
+@keyframes m-in { from { opacity: 0; transform: translateY(8px); } }
+@keyframes m-in-r { from { opacity: 0; transform: translateX(24px); } }
+@keyframes m-in-l { from { opacity: 0; transform: translateX(-24px); } }
+@keyframes m-pop { from { opacity: 0; transform: scale(.94); } }
+@keyframes m-fade { from { opacity: 0; } }
+.m-in { animation: m-in var(--d2) var(--ease) both; }
+.m-in-r { animation: m-in-r var(--d2) var(--ease) both; }
+.m-in-l { animation: m-in-l var(--d2) var(--ease) both; }
+.m-pop { animation: m-pop var(--d2) var(--ease) both; }
+.m-out { opacity: 0 !important; transform: scale(.92) !important; transition: opacity 140ms ease, transform 160ms var(--ease) !important; pointer-events: none; }
+img.rv { opacity: 0; transition: opacity 160ms ease; } img.rv.in { opacity: 1; }
+.grid.skeleton .sk { display: block; aspect-ratio: 1; border-radius: 6px; background: linear-gradient(100deg, var(--field) 40%, rgb(var(--ink) / .12) 50%, var(--field) 60%) 0 0 / 300% 100%; animation: sk 1.4s linear infinite; }
+@keyframes sk { to { background-position: -150% 0; } }
+
+/* dialogs */
+@keyframes dlg-in { from { opacity: 0; transform: scale(.98); } }
+@keyframes dlg-bg { from { opacity: 0; } }
+dialog[open] { animation: dlg-in var(--d2) var(--ease); }
+dialog[open]::backdrop { animation: dlg-bg var(--d2) ease; }
+dialog.closing { opacity: 0; transform: scale(.98); transition: opacity 140ms ease, transform 140ms ease; }
+dialog.closing::backdrop { opacity: 0; transition: opacity 140ms ease; }
+
+/* toasts come in from the right, leave the same way */
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px); } }
+.toast { animation: toast-in var(--d2) var(--ease); }
+.toast.out { opacity: 0; transform: translateX(24px); transition: opacity 160ms ease, transform 160ms ease; }
+
+/* the sidebar's highlight slides from one page to the next */
+#nav { position: relative; }
+#nav.has-pill .nav-btn.on { background: none; }
+.nav-pill { position: absolute; left: 0; right: 0; top: 0; border-radius: 10px; background: var(--sel); pointer-events: none; transition: transform var(--d2) var(--ease), height var(--d2) var(--ease); }
+#nav .nav-btn { z-index: 1; }
+
+/* tabs open by growing and close by folding; the one being dragged lifts */
+@keyframes tab-in { from { opacity: 0; max-width: 0; } to { max-width: 220px; } }
+.tab.m-tab-in { animation: tab-in var(--d2) var(--ease); overflow: hidden; }
+.tab.m-tab-out { opacity: 0; flex-basis: 0 !important; width: 0 !important; overflow: hidden; transition: opacity 140ms ease, flex-basis var(--d2) var(--ease), width var(--d2) var(--ease); }
+.tab.dragging { z-index: 5; opacity: .92; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); cursor: grabbing; transition: none; }
+.tab.shift { transition: transform var(--d2) var(--ease); }
+.tab-main .icon.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* an album's pages unfold in the sidebar */
+.al-group.open.m-unfold .al-subs { animation: m-in var(--d2) var(--ease); }
+
+/* the photo grid: ticks grow, the selection bar rises, edited photos cross-fade */
+.tile .chk { transition: opacity var(--d1) ease, transform var(--d1) var(--ease), background-color var(--d1) ease, box-shadow var(--d1) ease; }
+.tile.on .chk { transform: scale(1.08); }
+.tile img { transition: transform var(--d2) var(--ease), border-radius var(--d2) var(--ease); }
+@keyframes sel-rise { from { transform: translateY(100%); opacity: 0; } }
+.selbar:not([hidden]) { animation: sel-rise var(--d2) var(--ease); }
+.tile .ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity 240ms ease; pointer-events: none; }
+
+/* the viewer: grows from its tile, slides between photos, its bars rest when the mouse does */
+#viewer { transition: background-color var(--d3) ease; }
+#viewer.opening { background-color: rgba(20, 22, 15, 0); }
+#viewer header, #viewer footer, .vw-nav { transition: opacity var(--d2) ease; }
+#viewer.idle header, #viewer.idle footer, #viewer.idle .vw-nav, #viewer.opening header, #viewer.opening footer, #viewer.opening .vw-nav { opacity: 0; }
+#viewer.idle { cursor: none; }
+#vw-img { transition: opacity 160ms ease; will-change: transform; }
+@keyframes vw-next { from { opacity: 0; transform: translateX(40px); } }
+@keyframes vw-prev { from { opacity: 0; transform: translateX(-40px); } }
+#vw-img.m-next { animation: vw-next var(--d2) var(--ease); } #vw-img.m-prev { animation: vw-prev var(--d2) var(--ease); }
+
+/* undo after delete: the bar empties in 15 s */
+.toast.undo { display: flex; align-items: center; gap: 14px; position: relative; overflow: hidden; padding-right: 10px; }
+.toast.undo button { border: 0; border-radius: 999px; padding: 5px 12px; background: var(--on-moss); color: var(--moss); font-weight: 700; }
+.toast.undo i { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--sage); transform-origin: left; }
+
+/* "less motion": the system's setting, or a computer that could not keep up */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+.calm *, .calm *::before, .calm *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+#vw-img.soft { filter: blur(3px); } #vw-img { transition: opacity 160ms ease, filter 220ms ease; }
+.al-group.m-unfold .al-subs { animation: m-in var(--d2) var(--ease); }
+html, body { overflow: hidden; overscroll-behavior: none; }
+
+/* switches: the pill glides; copy buttons say "Copiat" in place */
+.seg { position: relative; }
+.seg-pill { position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 999px; background: var(--moss); pointer-events: none; transition: transform var(--d2) var(--ease), width var(--d2) var(--ease); }
+.seg.has-pill .seg-b.on { background: none; }
+.seg-b { position: relative; z-index: 1; transition: color var(--d1) ease; }
+button.copied { color: var(--moss); }
+button.copied .icon { animation: m-pop var(--d2) var(--ease); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 240ms; }
+
+
+/* buttons give a little under the finger; banners and the upload dock slide in */
+.primary, .secondary, .danger, .quiet, .ghost, .seg-b, .nav-btn, .al-item, .al-sub, .tab-main, .icon-btn, .search-btn, .update-btn { transition: transform 80ms ease, background-color var(--d1) ease, color var(--d1) ease, opacity var(--d1) ease; }
+:is(.primary, .secondary, .danger, .quiet, .ghost, .icon-btn, .search-btn, .update-btn, .nav-btn, .al-item, .al-sub):active:not(:disabled) { transform: scale(.97); }
+.offline:not([hidden]), .demo-note:not([hidden]) { animation: m-in var(--d2) var(--ease); }
+#dock:not([hidden]) { animation: toast-in var(--d2) var(--ease); }
+.update-btn { animation: m-pop var(--d2) var(--ease); }

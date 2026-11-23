@@ -38,16 +38,16 @@ function renderPhotos() {
   const empty = !shown.length ? el('p', { class: 'empty' }, (a.photos || []).length ? 'Nicio poză nu se potrivește cu filtrul ales.' : 'Albumul e gol. Trage aici pozele sau un folder, ori folosește butoanele de sus.') : null;
   const grid = el('div', { class: 'grid', id: 'grid', style: `--tile:${pv.size}px` }, shown.map((p, i) => tile(p, i)));
   const searchBox = el('input', { class: 'field slim', type: 'search', placeholder: 'Caută după nume', value: pv.q, 'aria-label': 'Caută după nume', oninput: e => {
-    pv.q = e.target.value; clearTimeout(searchBox._t); searchBox._t = setTimeout(() => { const at = e.target.selectionStart; renderPhotos(); const n = $('#tab-body input[type=search]'); if (n) { n.focus(); n.setSelectionRange(at, at); } }, 250);
+    pv.q = e.target.value; clearTimeout(searchBox._t); searchBox._t = setTimeout(() => { const at = e.target.selectionStart; regrid(); const n = $('#tab-body input[type=search]'); if (n) { n.focus(); n.setSelectionRange(at, at); } }, 250);
   } });
   body.replaceChildren(...[
     el('div', { class: 'toolbar' },
       btn('primary small', 'upload', 'Încarcă poze', uploadDialog, { title: 'Adaugă poze din calculator în acest album' }),
       el('span', { class: 'grow' }), searchBox, el('span', { class: 'muted count' }, plural(shown.length, 'poză', 'poze'))),
     el('div', { class: 'subbar' },
-      segmented(filters.map(f => ({ value: f.value, label: f.label })), pv.filter, v => { pv.filter = v; sel.clear(); renderPhotos(); }, 'Filtru'),
+      segmented(filters.map(f => ({ value: f.value, label: f.label })), pv.filter, v => { pv.filter = v; sel.clear(); regrid(); }, 'Filtru'),
       el('span', { class: 'grow' }),
-      el('span', { class: 'field-inline' }, ico('sort'), segmented(Object.entries(SORTS).map(([value, s]) => ({ value, label: s.label })), pv.sort, v => { pv.sort = v; renderPhotos(); }, 'Sortare')),
+      el('span', { class: 'field-inline' }, ico('sort'), segmented(Object.entries(SORTS).map(([value, s]) => ({ value, label: s.label })), pv.sort, v => { pv.sort = v; regrid(); }, 'Sortare')),
       el('label', { class: 'field-inline' }, ico('grid'), el('input', { type: 'range', min: 90, max: 280, step: 10, value: pv.size, class: 'range', 'aria-label': 'Mărimea pozelor', oninput: e => { pv.size = Number(e.target.value); ui.set('grid-size', pv.size); $('#grid').style.setProperty('--tile', `${pv.size}px`); } }))),
     empty, grid, el('div', { class: 'selbar', id: 'selbar', hidden: true }),
   ].filter(Boolean));
@@ -57,12 +57,15 @@ function renderPhotos() {
 
 function tile(p, i) {
   return el('button', { type: 'button', class: `tile${sel.set.has(p.id) ? ' on' : ''}`, dataset: { i, id: p.id }, 'aria-label': p.filename },
-    el('img', { src: abs(p.thumb), alt: '', loading: 'lazy', decoding: 'async' }),
+    reveal(el('img', { src: abs(p.thumb), alt: '', loading: 'lazy', decoding: 'async' })),
     el('span', { class: 'chk', 'aria-hidden': 'true' }),
     p.rating ? el('span', { class: 'badge stars' }, '★'.repeat(p.rating)) : null,
     p.hidden || p.private ? el('span', { class: 'badge hid' }, ico('eye-off'), 'Ascunsă') : null,
     !p.indexed ? el('span', { class: 'badge soft' }, 'se caută fețe') : null);
 }
+
+/** The grid drawn again with its photos gliding from where they were (filters, sort, search, changes). */
+const regrid = () => flip(() => $('#grid'), '.tile', 'id', renderPhotos);
 
 function onGridClick(e) {
   const t = e.target.closest('.tile');
@@ -78,7 +81,7 @@ function onGridClick(e) {
     $$('.tile', $('#grid')).forEach(n => n.classList.toggle('on', sel.set.has(n.dataset.id)));
     return drawSelection();
   }
-  openViewer(shown, i);
+  openViewer(shown, i, t);
 }
 
 const selectedPhotos = () => (S.album.photos || []).filter(p => sel.set.has(p.id));
@@ -105,20 +108,107 @@ function drawSelection() {
 
 // ---- actions on a selection ----
 async function bulk(action, extra = {}, ids = [...sel.set]) {
-  for (let i = 0; i < ids.length; i += 300) {
-    const done = await guard(() => api('POST', `/api/albums/${S.code}/photos/bulk`, { action, ids: ids.slice(i, i + 300), ...extra }));
-    if (!done) return false;
-  }
-  sel.clear();
-  await reloadAlbum();
-  return true;
+  const set = new Set(ids);
+  return instant(a => {
+    if (action === 'delete') {
+      a.photos = (a.photos || []).filter(p => !set.has(p.id));
+      a.photo_count = Math.max(0, (a.photo_count || 0) - set.size);
+    } else {
+      for (const p of a.photos || []) {
+        if (!set.has(p.id)) continue;
+        if (action === 'hide') p.private = true;
+        else if (action === 'show') p.private = false;
+        else if (action === 'rate') p.rating = extra.rating;
+      }
+    }
+    sel.clear();
+  }, async () => {
+    for (let i = 0; i < ids.length; i += 300) await api('POST', `/api/albums/${S.code}/photos/bulk`, { action, ids: ids.slice(i, i + 300), ...extra });
+    return true;
+  });
 }
 
 async function removeSelected() {
-  const n = sel.size;
-  if (ui.get('confirm-delete', true) && !await confirmBox(`Ștergi ${plural(n, 'poza', 'pozele')}?`, 'Pozele dispar din album și de pe serverul hsk.photos. Nu se pot recupera.', 'Șterge', true)) return;
-  if (await bulk('delete')) toast(`${plural(n, 'poză ștearsă', 'poze șterse')}.`, 'success');
+  const ids = [...sel.set];
+  softDelete(ids);
 }
+
+/** An album from the server, without the photos whose deletion is still waiting (they are gone on screen). */
+function dropPending(code, album) {
+  if (!album || pendingDelete.code !== code || !pendingDelete.items.length) return album;
+  const gone = new Set(pendingDelete.items.map(x => x.p.id));
+  const photos = (album.photos || []).filter(p => !gone.has(p.id));
+  return { ...album, photos, photo_count: Math.max(0, (album.photo_count || 0) - ((album.photos || []).length - photos.length)) };
+}
+
+// ---- delete with "Anulează" ----
+// The photos leave the album at once; the server deletes them only when 15 s pass without another delete.
+// Every delete in that time joins the same group and starts the 15 s again; "Anulează" brings the whole group back.
+const pendingDelete = { code: null, items: [], timer: 0, toast: null };
+const UNDO_MS = 15000;
+
+function softDelete(ids) {
+  if (!ids.length || !S.album) return;
+  if (pendingDelete.code && pendingDelete.code !== S.code) flushDelete(); // another album's group goes now
+  pendingDelete.code = S.code;
+  const set = new Set(ids), photos = S.album.photos || [];
+  const tiles = ids.map(id => $(`#grid .tile[data-id="${CSS.escape(id)}"]`));
+  photos.forEach((p, i) => { if (set.has(p.id)) pendingDelete.items.push({ p, i }); });
+  sel.clear();
+  leave(tiles, () => flip(() => $('#grid'), '.tile', 'id', () => {
+    S.album.photos = photos.filter(p => !set.has(p.id));
+    S.album.photo_count = Math.max(0, (S.album.photo_count || 0) - set.size);
+    const t = activeTab(); if (t && t.album) t.album = S.album;
+    renderPhotos();
+    drawAlbumHead();
+  }));
+  clearTimeout(pendingDelete.timer);
+  pendingDelete.timer = setTimeout(flushDelete, UNDO_MS);
+  drawUndo();
+}
+
+function drawUndo() {
+  const n = pendingDelete.items.length;
+  if (pendingDelete.toast) pendingDelete.toast.remove();
+  const bar = el('i');
+  const t = el('div', { class: 'toast undo', role: 'status' },
+    el('span', {}, `${plural(n, 'poză ștearsă', 'poze șterse')}`),
+    el('button', { type: 'button', onclick: undoDelete }, 'Anulează'), bar);
+  $('#toasts').append(t);
+  pendingDelete.toast = t;
+  bar.animate([{ transform: 'scaleX(1)' }, { transform: 'scaleX(0)' }], { duration: UNDO_MS, easing: 'linear', fill: 'forwards' });
+}
+
+function undoDelete() {
+  clearTimeout(pendingDelete.timer);
+  const { code, items } = pendingDelete;
+  Object.assign(pendingDelete, { code: null, items: [], timer: 0 });
+  dismissToast(pendingDelete.toast); pendingDelete.toast = null;
+  const target = S.code === code ? S.album : (tabById(`album:${code}`) || {}).album;
+  if (!target) return;
+  const back = (target.photos || []).slice();
+  for (const { p, i } of items.sort((x, y) => x.i - y.i)) back.splice(Math.min(i, back.length), 0, p);
+  const put = () => { target.photos = back; target.photo_count = (target.photo_count || 0) + items.length; };
+  if (S.code === code && $('#grid')) flip(() => $('#grid'), '.tile', 'id', () => { put(); renderPhotos(); drawAlbumHead(); });
+  else put();
+  toast(items.length === 1 ? 'Poza a revenit în album.' : `${nf.format(items.length)} poze au revenit în album.`, 'success');
+}
+
+async function flushDelete() {
+  clearTimeout(pendingDelete.timer);
+  const { code, items } = pendingDelete;
+  Object.assign(pendingDelete, { code: null, items: [], timer: 0 });
+  dismissToast(pendingDelete.toast); pendingDelete.toast = null;
+  if (!code || !items.length) return;
+  const ids = items.map(x => x.p.id);
+  try {
+    for (let i = 0; i < ids.length; i += 300) await api('POST', `/api/albums/${code}/photos/bulk`, { action: 'delete', ids: ids.slice(i, i + 300) });
+  } catch (e) {
+    toast(e && e.message ? e.message : e, 'error');
+  }
+  if (S.code === code) reloadAlbum();
+}
+// closing the window or restarting it (Ctrl+Shift+R) during the 15 s: the photos stay (nothing is deleted unseen)
 
 async function rateDialog() {
   const n = await modal({ title: `Nota pentru ${plural(sel.size, 'poză', 'poze')}`, body: el('p', { class: 'muted' }, 'Nota o vezi doar tu, nu invitații.'),
@@ -135,12 +225,14 @@ async function moveDialog() {
     actions: [{ label: 'Renunț', value: undefined }] });
   if (!to) return;
   const ids = [...sel.set];
-  for (let i = 0; i < ids.length; i += 300) {
-    if (!await guard(() => api('POST', `/api/albums/${S.code}/photos/sort`, { photos: ids.slice(i, i + 300), to }))) return;
-  }
-  sel.clear();
-  toast('Pozele au fost mutate.', 'success');
-  reloadAlbum();
+  const ok = await instant(a => {
+    if (to === 'hide') for (const p of a.photos || []) if (ids.includes(p.id)) p.private = true;
+    sel.clear();
+  }, async () => {
+    for (let i = 0; i < ids.length; i += 300) await api('POST', `/api/albums/${S.code}/photos/sort`, { photos: ids.slice(i, i + 300), to });
+    return true;
+  });
+  if (ok) toast('Pozele au fost mutate.', 'success');
 }
 
 // ---- upload ----
@@ -176,13 +268,21 @@ async function retouch(photos) {
   const info = await guard(() => invoke('retouch_start', { album: S.code, albumName: S.album.name,
     photos: photos.map(p => ({ id: p.id, filename: p.filename })) }));
   if (!info) return;
-  const go = await modal({ title: info.editor ? `Pozele s-au deschis în ${info.editor}` : 'Pozele sunt gata de editat', wide: true,
-    body: el('div', { class: 'stack' },
-      el('p', {}, `Am pus ${plural(photos.length, 'originalul', 'originalele')} în folderul de mai jos${info.editor ? ` și l-am deschis în ${info.editor}` : ''}.`),
-      el('p', { class: 'path-box' }, info.folder),
-      el('p', { class: 'muted' }, 'Editează-le în programul tău și salvează peste același fișier, cu același nume (în Lightroom: Exportă în acest folder, cu numele inițial). Fiecare salvare înlocuiește poza din album, în același loc și cu același link. Cât timp aplicația rulează, urmărește folderul.')),
-    actions: [{ label: 'Închide', value: false }, { label: 'Arată folderul', value: 'open', primary: true }] });
-  if (go === 'open') guard(() => invoke('reveal', { path: info.folder }));
+  // the explanation comes once; after that a short note, and the folder stays one click away in it
+  if (ui.get('retouch-explained', false)) {
+    toast(info.editor ? `${plural(photos.length, 'Poza s-a deschis', 'Pozele s-au deschis')} în ${info.editor}. Salvează peste fișier și se înlocuiește în album.`
+      : `${plural(photos.length, 'Originalul e gata', 'Originalele sunt gata')} de editat în folderul albumului.`, 'success');
+  } else {
+    ui.set('retouch-explained', true);
+    const go = await modal({ title: info.editor ? `Pozele s-au deschis în ${info.editor}` : 'Pozele sunt gata de editat', wide: true,
+      body: el('div', { class: 'stack' },
+        el('p', {}, `Am pus ${plural(photos.length, 'originalul', 'originalele')} în folderul de mai jos${info.editor ? ` și l-am deschis în ${info.editor}` : ''}.`),
+        el('p', { class: 'path-box' }, info.folder),
+        el('p', { class: 'muted' }, 'Editează-le în programul tău și salvează peste același fișier, cu același nume (în Lightroom: Exportă în acest folder, cu numele inițial). Fiecare salvare înlocuiește poza din album, în același loc și cu același link, în câteva secunde. Cât timp aplicația rulează, urmărește folderul.'),
+        el('p', { class: 'muted' }, 'Fereastra asta apare doar acum. Data viitoare pozele se deschid direct.')),
+      actions: [{ label: 'Am înțeles', value: false }, { label: 'Arată folderul', value: 'open', primary: true }] });
+    if (go === 'open') guard(() => invoke('reveal', { path: info.folder }));
+  }
   sel.clear();
   if ($('#grid')) renderPhotos();
 }
@@ -190,25 +290,84 @@ async function retouch(photos) {
 // ---- viewer ----
 const vw = { list: [], i: 0 };
 
-function openViewer(list, i) {
+/** Opens the viewer; from a tile in the grid, the photo grows out of that tile. */
+function openViewer(list, i, from = null) {
   vw.list = list; vw.i = i;
-  $('#viewer').hidden = false;
+  const viewer = $('#viewer'), img = $('#vw-img');
+  const start = from && !calm() ? from.getBoundingClientRect() : null;
+  if (start) viewer.classList.add('opening');
+  viewer.hidden = false;
   vwRender();
+  wakeViewer();
+  if (!start) return;
+  // the small copy is already decoded (the grid showed it): measure where it lands and grow it from the tile
+  (img.decode ? img.decode().catch(() => {}) : Promise.resolve()).then(() => {
+    const end = img.getBoundingClientRect();
+    if (!end.width) { viewer.classList.remove('opening'); return; }
+    const k = Math.max(start.width / end.width, start.height / end.height);
+    const dx = start.left + start.width / 2 - (end.left + end.width / 2), dy = start.top + start.height / 2 - (end.top + end.height / 2);
+    img.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${k})`, borderRadius: '6px' }, { transform: 'none' }],
+      { duration: 320, easing: 'cubic-bezier(.16, 1, .3, 1)' });
+    requestAnimationFrame(() => viewer.classList.remove('opening'));
+  });
 }
-function closeViewer() { $('#viewer').hidden = true; $('#vw-img').removeAttribute('src'); }
+
+/** Closes the viewer; the photo goes back into its tile if the tile is on screen, otherwise it fades. */
+function closeViewer() {
+  const viewer = $('#viewer'), img = $('#vw-img'), p = vw.list[vw.i];
+  const done = () => { viewer.hidden = true; viewer.classList.remove('opening', 'idle'); img.removeAttribute('src'); delete img.dataset.src; };
+  if (viewer.hidden || calm() || !p) return done();
+  const tileEl = $(`#grid .tile[data-id="${CSS.escape(p.id)}"]`), from = img.getBoundingClientRect();
+  const to = tileEl && tileEl.getBoundingClientRect();
+  const visible = to && to.bottom > 0 && to.top < innerHeight && from.width;
+  viewer.classList.add('opening'); // the dark goes away, the bars hide
+  const anim = visible
+    ? img.animate([{ transform: 'none' }, { transform: `translate(${to.left + to.width / 2 - (from.left + from.width / 2)}px, ${to.top + to.height / 2 - (from.top + from.height / 2)}px) scale(${Math.max(to.width / from.width, to.height / from.height)})` }],
+      { duration: 240, easing: 'cubic-bezier(.16, 1, .3, 1)' })
+    : img.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.96)' }], { duration: 160, easing: 'ease' });
+  anim.onfinish = done;
+}
+
+let vwToken = 0, vwIdle = 0;
+/** The photo in the viewer: the grid's small copy at once, the sharp one as soon as it is decoded; the next and
+ *  previous ones are fetched ahead, so moving through them never waits. */
+function showPicture(p, dir) {
+  const img = $('#vw-img'), token = ++vwToken;
+  const full = abs(p.view || p.eco || p.thumb);
+  if (img.dataset.src !== full) {
+    img.dataset.src = full;
+    img.src = abs(p.thumb);
+    img.classList.add('soft');
+    const sharp = new Image();
+    sharp.src = full;
+    sharp.decode().catch(() => {}).then(() => { if (token === vwToken) { img.src = full; img.classList.remove('soft'); } });
+  }
+  if (dir && !calm()) { img.classList.remove('m-next', 'm-prev'); void img.offsetWidth; img.classList.add(dir > 0 ? 'm-next' : 'm-prev'); }
+  for (const k of [vw.i + 1, vw.i - 1]) { const q = vw.list[k]; if (q) new Image().src = abs(q.view || q.eco || q.thumb); }
+}
+
+/** The bars rest after 2 s without the mouse moving, and come back with it. */
+function wakeViewer() {
+  const v = $('#viewer');
+  v.classList.remove('idle');
+  clearTimeout(vwIdle);
+  vwIdle = setTimeout(() => { if (!v.hidden) v.classList.add('idle'); }, 2000);
+}
+$('#viewer').addEventListener('pointermove', wakeViewer);
 
 async function rate1(p, n) {
-  if (await guard(() => api('POST', `/api/albums/${S.code}/photos/bulk`, { action: 'rate', ids: [p.id], rating: n }))) {
-    p.rating = n; // the viewer stays where it is; the album is refreshed behind it
-    vwRender();
-    reloadAlbum();
-  }
+  const before = p.rating;
+  p.rating = n; // the stars change at once; the server is told after
+  vwRender();
+  const tileEl = $(`#grid .tile[data-id="${CSS.escape(p.id)}"]`);
+  if (tileEl) tileEl.replaceWith(tile(p, Number(tileEl.dataset.i)));
+  if (!await guard(() => api('POST', `/api/albums/${S.code}/photos/bulk`, { action: 'rate', ids: [p.id], rating: n }))) { p.rating = before; vwRender(); reloadAlbum(); }
 }
 
-function vwRender() {
+function vwRender(dir = 0) {
   const p = vw.list[vw.i];
   if (!p) return closeViewer();
-  $('#vw-img').src = abs(p.view || p.eco || p.thumb);
+  showPicture(p, dir);
   $('#vw-title').textContent = `${p.filename} · ${vw.i + 1} din ${vw.list.length}`;
   const hiddenNow = p.hidden || p.private;
   $('#vw-actions').replaceChildren(
@@ -229,21 +388,21 @@ function vwRender() {
 
 /** An action in the viewer reloads the album; the viewer comes back on the same photo. */
 async function viewerAct(fn, id) {
-  await fn();
+  const pending = fn(); // the change is on screen before the server answers
   const at = shown.findIndex(q => q.id === id);
-  if (at >= 0) openViewer(shown, at);
+  if (at >= 0 && $('#viewer').hidden) openViewer(shown, at);
+  await pending;
 }
 
 async function viewerDelete(p) {
-  if (ui.get('confirm-delete', true) && !await confirmBox('Ștergi poza?', `${p.filename} dispare din album și de pe server. Nu se poate recupera.`, 'Șterge', true)) return;
-  if (!await guard(() => api('DELETE', `/api/albums/${S.code}/photos/${p.id}`))) return;
-  const at = Math.min(vw.i, vw.list.length - 2);
-  await reloadAlbum();
-  if (at >= 0 && shown.length) openViewer(shown, Math.min(at, shown.length - 1)); else closeViewer();
+  // gone from the viewer and the grid at once, the next photo takes its place; "Anulează" for 15 s
+  vw.list = vw.list.filter(q => q.id !== p.id);
+  if (vw.list.length) { vw.i = Math.min(vw.i, vw.list.length - 1); vwRender(1); } else closeViewer();
+  softDelete([p.id]);
 }
 
-$('#vw-prev').addEventListener('click', () => { vw.i = Math.max(0, vw.i - 1); vwRender(); });
-$('#vw-next').addEventListener('click', () => { vw.i = Math.min(vw.list.length - 1, vw.i + 1); vwRender(); });
+$('#vw-prev').addEventListener('click', () => { if (vw.i > 0) { vw.i--; vwRender(-1); } });
+$('#vw-next').addEventListener('click', () => { if (vw.i < vw.list.length - 1) { vw.i++; vwRender(1); } });
 $('#viewer').addEventListener('click', e => { if (e.target.tagName === 'FIGURE' || e.target.id === 'viewer') closeViewer(); });
 addEventListener('keydown', e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
@@ -251,8 +410,8 @@ addEventListener('keydown', e => {
   if (!$('#viewer').hidden) {
     const p = vw.list[vw.i];
     if (e.key === 'Escape') closeViewer();
-    else if (e.key === 'ArrowLeft') $('#vw-prev').click();
-    else if (e.key === 'ArrowRight') $('#vw-next').click();
+    else if (e.key === 'ArrowLeft') { if (e.repeat) { if (vw.i > 0) { vw.i--; vwRender(); } } else $('#vw-prev').click(); wakeViewer(); }
+    else if (e.key === 'ArrowRight') { if (e.repeat) { if (vw.i < vw.list.length - 1) { vw.i++; vwRender(); } } else $('#vw-next').click(); wakeViewer(); }
     else if (/^[0-5]$/.test(e.key) && p) rate1(p, Number(e.key));
     else if (e.key.toLowerCase() === 'h' && p) viewerAct(() => bulk(p.hidden || p.private ? 'show' : 'hide', {}, [p.id]), p.id);
     else if (e.key === 'Delete' && p) viewerDelete(p);

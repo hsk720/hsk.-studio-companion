@@ -119,7 +119,7 @@ function dashRow(a) {
   const found = m.searches ? Math.round(((m.found_searches || 0) / m.searches) * 100) : null;
   const left = daysLeft(a.expires_at);
   const tone = left <= 2 ? 'hot' : left <= 7 ? 'warm' : '';
-  return el('button', { type: 'button', class: 'drow', onclick: () => openAlbum(a.code) },
+  return el('button', { type: 'button', class: 'drow', onclick: () => openAlbum(a.code), onpointerenter: () => prefetchAlbum(a.code) },
     a.thumb ? el('img', { class: 'dthumb', src: a.thumb, alt: '', loading: 'lazy' }) : el('span', { class: 'dthumb blank' }, ico('image')),
     el('span', { class: 'dname' }, el('b', {}, a.name), el('small', { class: 'muted' }, a.event_date ? fmtDay(a.event_date) : 'fără dată', a.demo ? ' · demo' : '')),
     el('span', { class: 'dnum' }, nf.format(a.photos || 0)),
@@ -138,7 +138,7 @@ function renderHome() {
   const q = (stats.find(m => m.quota) || {}).quota;
   const pct = q && q.limit ? Math.min(100, Math.round((q.used / q.limit) * 100)) : null;
   const next = [...real].sort((a, b) => a.expires_at - b.expires_at)[0];
-  const tile = (label, value, sub, extra) => el('div', { class: 'tile-k' }, el('small', {}, label), el('b', {}, value), el('span', { class: 'muted' }, sub || ' '), extra || null);
+  const tile = (label, value, sub, extra) => el('div', { class: 'tile-k' }, el('small', {}, label), countTo(label, value), el('span', { class: 'muted' }, sub || ' '), extra || null);
   const when = S.statsAt ? new Date(S.statsAt).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' }) : '';
   const intro = introGroup();
   const rows = [...S.albums].sort((a, b) => (a.demo - b.demo) || (b.created_at - a.created_at));
@@ -166,4 +166,23 @@ function renderHome() {
       el('div', { class: 'dside' },
         el('div', { class: 'dpanel' }, attentionPanel()),
         intro ? el('div', { class: 'dpanel' }, intro) : null))));
+}
+
+
+/** A dashboard number that changed since it was last shown counts up (or down) to the new value in 400 ms. */
+const shownNumbers = new Map();
+function countTo(key, value) {
+  const b = el('b', {}, value);
+  const text = String(value), target = Number(text.replace(/\./g, '').replace(',', '.'));
+  const was = shownNumbers.get(key);
+  shownNumbers.set(key, target);
+  if (!/^[\d.,]+$/.test(text) || was == null || was === target || !Number.isFinite(target) || calm()) return b;
+  const start = performance.now(), from = was;
+  const step = now => {
+    const k = Math.min(1, (now - start) / 400), e = 1 - Math.pow(1 - k, 3);
+    b.textContent = nf.format(Math.round(from + (target - from) * e));
+    if (k < 1) requestAnimationFrame(step); else b.textContent = text;
+  };
+  requestAnimationFrame(step);
+  return b;
 }

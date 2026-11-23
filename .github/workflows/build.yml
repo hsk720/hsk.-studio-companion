@@ -73,7 +73,9 @@ jobs:
           Copy-Item setup/src-tauri/target/release/hsk-studio-setup.exe $out
           gh release upload $tag $out --clobber
           if ($LASTEXITCODE -ne 0) { Write-Output "::error::upload of $out failed"; exit 1 }
+          # "Ce e nou" in the app's update dialog is the release text: release-notes.md, written for each version
+          if (Test-Path release-notes.md) { gh release edit $tag --notes-file release-notes.md }
           # people download one Windows file: our setup. The plain NSIS installer is inside it.
           # (GitHub stores the name with dots for spaces: "hsk.studio_…"); a miss here is not a failure
-          gh release delete-asset $tag ($nsis.Name -replace ' ', '.') -y
+          gh release delete-asset $tag ($nsis.Name -replace '\.?\s+', '.') -y
           exit 0
